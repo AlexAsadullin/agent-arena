@@ -7,16 +7,16 @@ symbols: [BTC-USDT-PERP, ETH-USDT-PERP]
 channel: trades
 bar_seconds: 3600
 start: "2025-01-06T00:00:00Z"
-steps_per_episode: 96
-lookback_bars: 48
+steps_per_episode: 72
+lookback_bars: 24
 episode_gap_bars: 0
-episodes: 4
+episodes: 6
 seeds: [0, 1, 2]
 prompt_variants: [neutral, risk_averse, aggressive]
 max_weight: 1.0
 periods_per_year: 8760
 features: [ret_24, vol_24, z_24]
-forecast_model: naive-drift
+forecast_model: null
 forecast_horizon: 1
 
 budgets:
@@ -30,7 +30,7 @@ budgets:
 
 market:
   seed: 7
-  trades_per_bar: 4
+  trades_per_bar: 2
   fee_bps: 5.0
   initial_prices: {BTC-USDT-PERP: 60000.0, ETH-USDT-PERP: 3000.0}
   regimes:

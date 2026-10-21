@@ -145,10 +145,10 @@ class ArenaRunner:
         frozen_reason: str | None = None
         model = spec.agent.model if spec.agent.kind == "llm" else None
         async with gateway.tools(session) as tools:
-            prices = await self._prices(tools, t0)
+            closes = await self._window(tools, t0)
             for step in range(season.steps_per_episode):
-                record, frozen_reason, prices = await self._step(
-                    gateway, tools, session.session_id, agent, spec, step, ledger, prices, frozen_reason
+                record, frozen_reason, closes = await self._step(
+                    gateway, tools, session.session_id, agent, spec, step, ledger, closes, frozen_reason
                 )
                 steps.append(record)
         return RunResult(
@@ -176,18 +176,19 @@ class ArenaRunner:
         spec: RunSpec,
         step: int,
         ledger: Ledger,
-        prices: dict[str, float],
+        closes: dict[str, list[float]],
         frozen_reason: str | None,
-    ) -> tuple[StepRecord, str | None, dict[str, float]]:
+    ) -> tuple[StepRecord, str | None, dict[str, list[float]]]:
         season = self.season
         t = season.step_time(spec.episode, step)
+        prices = {s: c[-1] for s, c in closes.items()}
         equity = ledger.equity(prices)
         weights_before = ledger.weights(prices)
         if frozen_reason is None and equity <= 0:
             frozen_reason = "bankrupt"
         observed: Observation | str | None = None
         if frozen_reason is None:
-            observed = await self._observe(tools, spec, step, t, prices, ledger)
+            observed = await self._observe(tools, spec, step, t, closes, ledger)
             if isinstance(observed, str):
                 frozen_reason = observed
         decision: Decision
@@ -222,8 +223,8 @@ class ArenaRunner:
 
         t_next = season.step_time(spec.episode, step + 1)
         await gateway.admin.set_clock(session_id, iso(t_next))
-        prices_next = await self._prices(tools, t_next)
-        equity_next = ledger.equity(prices_next)
+        closes_next = await self._window(tools, t_next)
+        equity_next = ledger.equity({s: c[-1] for s, c in closes_next.items()})
         e_now = float(equity)
         ret_net = float(equity_next - equity) / e_now if e_now > 0 else 0.0
         ret_gross = float(equity_next - equity + tokens + latency) / e_now if e_now > 0 else 0.0
@@ -252,7 +253,7 @@ class ArenaRunner:
             latency_ms=decision.usage.latency_ms if decision.usage else 0.0,
             frozen=frozen_reason is not None,
         )
-        return record, frozen_reason, prices_next
+        return record, frozen_reason, closes_next
 
     async def _observe(
         self,
@@ -260,7 +261,7 @@ class ArenaRunner:
         spec: RunSpec,
         step: int,
         t: datetime,
-        prices: dict[str, float],
+        closes: dict[str, list[float]],
         ledger: Ledger,
     ) -> Observation | str:
         """Build the observation, or return the freeze reason if the gateway froze the session."""
@@ -271,12 +272,7 @@ class ArenaRunner:
         if budget.frozen:
             return budget.frozen_reason or "frozen"
         start = iso(t - season.lookback_bars * season.bar)
-        closes: dict[str, list[float]] = {}
-        for symbol in season.symbols:
-            data = await tools.market_data(season.venue, symbol, season.channel, start, iso(t))
-            if isinstance(data, Refusal):
-                raise GatewayError(f"market_data refused at {iso(t)}: {data.code} {data.reason}")
-            closes[symbol] = bar_closes(data.rows, t, season.lookback_bars + 1, self._bar_ns)
+        prices = {s: c[-1] for s, c in closes.items()}
         features: dict[str, dict[str, float | None]] = {}
         if season.features:
             feats = await tools.features(season.features, season.symbols, start, iso(t))
@@ -361,16 +357,17 @@ class ArenaRunner:
             result.traded_notional += dec(qty) * dec(fill_price)
         return result
 
-    async def _prices(self, tools: GatewayTools, t: datetime) -> dict[str, float]:
-        """Last trade price per symbol at or before ``t`` (one bar of data)."""
+    async def _window(self, tools: GatewayTools, t: datetime) -> dict[str, list[float]]:
+        """Bar closes per symbol for the look-back window ending at ``t`` (last close = price at ``t``)."""
         season = self.season
-        start = iso(t - season.bar)
-        out: dict[str, float] = {}
+        start = iso(t - season.lookback_bars * season.bar)
+        out: dict[str, list[float]] = {}
         for symbol in season.symbols:
             data = await tools.market_data(season.venue, symbol, season.channel, start, iso(t))
             if isinstance(data, Refusal):
                 raise GatewayError(f"market_data refused at {iso(t)}: {data.code} {data.reason}")
-            if not data.rows:
-                raise GatewayError(f"no trades for {symbol} in the bar ending {iso(t)}")
-            out[symbol] = max(data.rows, key=lambda r: r.ts).price
+            closes = bar_closes(data.rows, t, season.lookback_bars + 1, self._bar_ns)
+            if not closes:
+                raise GatewayError(f"no trades for {symbol} in the window ending {iso(t)}")
+            out[symbol] = closes
         return out
