@@ -200,6 +200,7 @@ class FakeGateway:
         return self._servers[session_id]
 
     def _build_server(self, session: FakeSession) -> MCPServer:
+        # Tools are async so the SDK calls them inline instead of hopping to a worker thread.
         server = MCPServer("fake-i9-gateway")
         market = self.market
         season = self.season
@@ -219,11 +220,11 @@ class FakeGateway:
             return lo, hi
 
         @server.tool(description="Session clock: the 'as known at' time (ISO-8601 UTC).")
-        def clock() -> dict[str, Any]:
+        async def clock() -> dict[str, Any]:
             return {"schema_version": "1", "known_at": iso(session.known_at)}
 
         @server.tool(description="Trades (I1 schema) for one symbol in [start, end], end <= clock.")
-        def market_data(venue: str, symbol: str, channel: str, start: str, end: str) -> dict[str, Any]:
+        async def market_data(venue: str, symbol: str, channel: str, start: str, end: str) -> dict[str, Any]:
             if venue != season.venue or symbol not in season.symbols:
                 return refusal("unknown_instrument", f"{venue}/{symbol}")
             if channel != season.channel:
@@ -253,7 +254,7 @@ class FakeGateway:
             description="Features at `end`: ret_<n> (n-bar log return), vol_<n> (n-bar stdev of "
             "log returns), z_<n> (price z-score vs n-bar mean). Unknown names return null."
         )
-        def features(names: list[str], symbols: list[str], start: str, end: str) -> dict[str, Any]:
+        async def features(names: list[str], symbols: list[str], start: str, end: str) -> dict[str, Any]:
             span = window(start, end)
             if isinstance(span, dict):
                 return span
@@ -266,7 +267,7 @@ class FakeGateway:
             return {"schema_version": "1", "features": out}
 
         @server.tool(description="Naive drift forecast of log return over `horizon` bars.")
-        def forecast(model: str, symbols: list[str], horizon: int) -> dict[str, Any]:
+        async def forecast(model: str, symbols: list[str], horizon: int) -> dict[str, Any]:
             items = []
             for s in symbols:
                 closes = market.closes_until(s, session.known_at)[-season.lookback_bars :]
@@ -283,7 +284,7 @@ class FakeGateway:
             }
 
         @server.tool(description="Vectorised backtest of ts_momentum(lookback) over [start, end].")
-        def run_backtest(
+        async def run_backtest(
             strategy: str,
             params: dict[str, Any],
             universe: list[str],
@@ -320,7 +321,7 @@ class FakeGateway:
             }
 
         @server.tool(description="S6 verdict for a strategy (the fake has no ledger).")
-        def verdict(strategy_id: str) -> dict[str, Any]:
+        async def verdict(strategy_id: str) -> dict[str, Any]:
             return {
                 "schema_version": "1",
                 "strategy_id": strategy_id,
@@ -333,7 +334,7 @@ class FakeGateway:
             description="Place an order at the session clock. qty in base units (> 0); side "
             "buy|sell; type market|limit (limit needs price). Pre-trade checked against budgets."
         )
-        def place_order(
+        async def place_order(
             venue: str,
             symbol: str,
             side: str,
@@ -397,7 +398,7 @@ class FakeGateway:
             }
 
         @server.tool(description="Cancel a resting order.")
-        def cancel_order(order_id: str) -> dict[str, Any]:
+        async def cancel_order(order_id: str) -> dict[str, Any]:
             if session.resting.pop(order_id, None) is None:
                 return {
                     "schema_version": "1",
@@ -408,12 +409,12 @@ class FakeGateway:
             return {"schema_version": "1", "order_id": order_id, "status": "cancelled"}
 
         @server.tool(description="Open positions (base units).")
-        def positions() -> dict[str, Any]:
+        async def positions() -> dict[str, Any]:
             items = [{"symbol": s, "qty": q} for s, q in sorted(session.positions.items()) if q != 0.0]
             return {"schema_version": "1", "positions": items}
 
         @server.tool(description="Account equity and cash in account currency.")
-        def account() -> dict[str, Any]:
+        async def account() -> dict[str, Any]:
             return {
                 "schema_version": "1",
                 "account_id": session.session_id,
@@ -422,7 +423,7 @@ class FakeGateway:
             }
 
         @server.tool(description="Budget limits, usage so far and whether the session is frozen.")
-        def budget() -> dict[str, Any]:
+        async def budget() -> dict[str, Any]:
             equity = self.equity(session)
             return {
                 "schema_version": "1",
@@ -437,7 +438,7 @@ class FakeGateway:
             }
 
         @server.tool(description="Report LLM usage (tokens, latency in ms, model id) for budgeting.")
-        def report_usage(tokens_in: int, tokens_out: int, latency_ms: float, model: str) -> dict[str, Any]:
+        async def report_usage(tokens_in: int, tokens_out: int, latency_ms: float, model: str) -> dict[str, Any]:
             if (blocked := frozen()) is not None:
                 return blocked
             price = self.pricing.get(model)
