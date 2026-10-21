@@ -1,0 +1,94 @@
+# Agent Arena (S8) defaults. Every value can be overridden by env: ARENA_<SECTION>__<KEY>.
+# Secrets (API keys, admin key) come only from the environment, never from this file.
+
+data_subdir: agent-arena
+seasons_dir: config/seasons
+prompts_file: config/prompts/variants.yaml
+max_concurrent_runs: 8
+log_level: INFO
+
+service:
+  host: 127.0.0.1
+  port: 8607
+
+gateway:
+  # I9 risk-gated MCP gateway (contract 6.6).
+  mcp_url: http://127.0.0.1:8608/mcp
+  admin_url: http://127.0.0.1:8608
+  admin_key_header: X-Admin-Key
+  agent_auth_header: Authorization
+  agent_auth_scheme: Bearer
+  session_header: X-Session-Id
+  mode: research
+  timeout_s: 30.0
+  # Clock-advance requests that fail transiently are retried this many times.
+  clock_retries: 2
+
+ledger:
+  # S6 research ledger (contract 6.1).
+  base_url: http://127.0.0.1:8601
+  timeout_s: 10.0
+  offline_inbox: true
+  inbox_subdir: research-ledger/inbox
+  source: s8
+
+leakage:
+  # S7 leakage probe (contract 6.5).
+  base_url: http://127.0.0.1:8605
+  timeout_s: 60.0
+  languages: [en]
+  reports_subdir: llm-leakage-probe/reports
+
+providers:
+  openai_compat:
+    kind: openai_compat
+    base_url: https://api.openai.com/v1
+    max_tokens: 1024
+    temperature: 0.0
+    timeout_s: 60.0
+  anthropic:
+    kind: anthropic
+    base_url: https://api.anthropic.com
+    api_version: "2023-06-01"
+    max_tokens: 1024
+    # Opus 5.5 rejects sampling parameters, so temperature stays unset; depth is set through effort.
+    effort: low
+    timeout_s: 120.0
+  scripted:
+    kind: scripted
+
+# USD per one million tokens. A model without an entry cannot be entered into a season.
+pricing:
+  claude-opus-5-5: {input: 4.00, output: 20.00}
+  claude-sonnet-5-5: {input: 2.00, output: 10.00}
+  claude-haiku-5-5: {input: 0.10, output: 0.50}
+  # Scripted doubles are priced like a mid-tier frontier model so that cost accounting is exercised.
+  scripted/trend-chaser: {input: 2.00, output: 10.00}
+  scripted/cautious-contrarian: {input: 0.10, output: 0.50}
+  scripted/martingale-gambler: {input: 4.00, output: 20.00}
+
+accounting:
+  # Fallback fee when the gateway fill does not report one.
+  fallback_fee_bps: 5.0
+  # Orders below this notional (in account currency) are not sent.
+  min_order_notional: 1.0
+
+latency:
+  # Slippage charged on traded notional for the time the agent spent thinking while the market moved.
+  slippage_bps_per_second: 2.0
+  max_slippage_bps: 50.0
+
+stats:
+  bootstrap_samples: 2000
+  ci_level: 0.95
+  alpha: 0.05
+  dsr_pass_threshold: 0.95
+  bradley_terry_max_iter: 500
+  bradley_terry_tol: 1.0e-9
+  seed: 20261021
+
+diagnostics:
+  # Absolute weight below which a position counts as flat.
+  flat_epsilon: 0.01
+  # A step "trades" when total absolute weight change exceeds this.
+  trade_epsilon: 0.01

@@ -1,0 +1,89 @@
+[project]
+name = "agent-arena"
+version = "0.1.0"
+description = "Statistical arena for LLM trading agents: deflated, bootstrapped, net-of-intelligence-cost leaderboards through the I9 MCP gateway."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+authors = [{ name = "Alex Asadullin" }]
+dependencies = [
+    "fastapi==0.156.8",
+    "httpx==0.28.1",
+    "httpx2==2.16.0",
+    "jinja2==3.1.6",
+    "mcp==2.3.0",
+    "numpy==2.5.4",
+    "pyarrow==26.0.0",
+    "pydantic==2.14.1",
+    "pydantic-settings==2.16.1",
+    "python-dotenv==1.2.4",
+    "pyyaml==6.0.3",
+    "scipy==1.18.1",
+    "structlog==26.1.0",
+    "typer==0.27.3",
+]
+
+[project.scripts]
+arena = "agent_arena.cli:app"
+
+[dependency-groups]
+dev = [
+    "hypothesis==6.170.5",
+    "mypy==2.4.0",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "pytest-cov==7.1.0",
+    "respx==0.23.1",
+    "ruff==0.17.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_arena"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "N", "PT", "C4", "RET"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+mypy_path = "src"
+packages = ["agent_arena"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# scipy ships no type stubs; only scipy.stats/special distribution functions are used.
+module = ["scipy", "scipy.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-m 'not live' --strict-markers"
+markers = ["live: needs a running I9 gateway or real LLM endpoints (skipped by default)"]
+
+[tool.coverage.run]
+source = ["agent_arena"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.uv]
+# Transitive pins from the platform constraints.txt, so the lock matches the shared set exactly.
+constraint-dependencies = [
+    "anyio==4.15.1",
+    "cffi==2.0.0",
+    "idna==3.18",
+    "pycparser==3.0",
+    "starlette==1.9.0",
+    "uvicorn==0.54.0",
+]
