@@ -1,4 +1,4 @@
-"""Synthetic market for one season cell ``(episode, seed)``, served by the fake gateway.
+"""Synthetic market for one season episode, served by the fake gateway.
 
 Bar closes follow an AR(1) log-return process per symbol (see :class:`RegimeConfig`). Each bar
 also carries ``trades_per_bar`` synthetic trades in the I1 ``trades`` schema; the last trade of a
@@ -8,6 +8,7 @@ last trade at or before a boundary recovers the close.
 
 from __future__ import annotations
 
+import bisect
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime
@@ -38,12 +39,11 @@ class Trade:
 
 
 class SyntheticMarket:
-    """Deterministic bar and trade history for one cell."""
+    """Deterministic bar and trade history for one episode (identical for every agent and seed)."""
 
-    def __init__(self, season: SeasonConfig, episode: int, seed: int) -> None:
+    def __init__(self, season: SeasonConfig, episode: int) -> None:
         self.season = season
         self.episode = episode
-        self.seed = seed
         self.first_bar = season.episode_start(episode) - season.lookback_bars * season.bar
         self.n_bars = season.lookback_bars + season.episode_span_bars
         self.bar_ns = season.bar_seconds * NS_PER_SECOND
@@ -51,8 +51,9 @@ class SyntheticMarket:
         regime = season.regime(episode)
         self.closes: dict[str, NDArray[np.float64]] = {}
         self._trades: dict[str, list[Trade]] = {}
+        self._trade_ts: dict[str, list[int]] = {}
         for symbol in season.symbols:
-            rng = np.random.default_rng(cell_seed(season.market.seed, episode, seed, symbol))
+            rng = np.random.default_rng(cell_seed(season.market.seed, episode, symbol))
             eps = rng.standard_normal(self.n_bars)
             rets = np.empty(self.n_bars)
             prev = 0.0
@@ -63,6 +64,7 @@ class SyntheticMarket:
             closes = season.market.initial_prices[symbol] * np.exp(np.cumsum(rets))
             self.closes[symbol] = closes
             self._trades[symbol] = self._make_trades(symbol, closes, regime.vol, rng)
+            self._trade_ts[symbol] = [t.ts_exchange for t in self._trades[symbol]]
 
     def _make_trades(
         self,
@@ -109,5 +111,7 @@ class SyntheticMarket:
         return self.closes[symbol][: self.bar_index(ts) + 1]
 
     def trades(self, symbol: str, start: datetime, end: datetime) -> list[Trade]:
-        lo, hi = to_ns(start), to_ns(end)
-        return [t for t in self._trades[symbol] if lo <= t.ts_exchange <= hi]
+        stamps = self._trade_ts[symbol]
+        lo = bisect.bisect_left(stamps, to_ns(start))
+        hi = bisect.bisect_right(stamps, to_ns(end))
+        return self._trades[symbol][lo:hi]

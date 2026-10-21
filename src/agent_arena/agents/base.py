@@ -13,7 +13,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field
 
-DecisionStatus = Literal["ok", "refused", "error"]
+DecisionStatus = Literal["ok", "refused", "error", "frozen"]
 
 
 class Observation(BaseModel):

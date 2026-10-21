@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Arena: {{ board.season_id }}</title>
+<style>
+:root { --bg: #ffffff; --fg: #1d2330; --muted: #5d6676; --line: #d8dde6; --head: #f2f4f8; --good: #1e7a46; --bad: #a33a2a; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14171d; --fg: #e4e8ef; --muted: #9aa3b2; --line: #2d333d; --head: #1c2028; --good: #5cc28a; --bad: #e07b6a; } }
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; margin: 0; padding: 24px 16px; }
+main { max-width: 1280px; margin: 0 auto; }
+h1 { font-size: 22px; margin: 0 0 8px; } h2 { font-size: 17px; margin: 28px 0 8px; }
+p.note { color: var(--muted); max-width: 900px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: right; white-space: nowrap; }
+th { background: var(--head); font-weight: 600; } td:first-child, th:first-child, td.l { text-align: left; }
+.yes { color: var(--good); font-weight: 600; } .no { color: var(--muted); } .flag { color: var(--bad); font-weight: 600; }
+</style>
+</head>
+<body><main>
+<h1>Agent Arena leaderboard: {{ board.season_id }}</h1>
+<p class="note">Metric: {{ board.metric }}. Brackets are {{ pct }}% two-level bootstrap confidence intervals
+({{ board.bootstrap_samples }} resamples over {{ board.n_episodes }} episodes, then over seed x prompt replicates).
+DSR deflates for {{ board.n_trials }} agent configurations. p is the one-sided paired bootstrap p-value against the best
+baseline ({{ board.best_baseline }}), Holm-adjusted at alpha {{ board.alpha }}. Computed {{ board.computed_at }}.</p>
+<div class="scroll"><table>
+<tr><th>#</th><th>Agent</th><th>Kind</th><th>Net Sharpe</th><th>Gross Sharpe</th><th>Net return %</th><th>Intel. cost bps</th>
+<th>DSR</th><th>DSR source</th><th>p (Holm)</th><th>Significant</th><th>BT strength</th><th>Leakage</th></tr>
+{% for r in board.rows %}
+<tr><td>{{ r.rank }}</td><td class="l">{{ r.agent_id }}</td><td class="l">{{ r.kind }}</td>
+<td>{{ r.net_sharpe | est }}</td><td>{{ r.gross_sharpe | est }}</td><td>{{ r.net_return_pct | est }}</td>
+<td>{{ r.intelligence_cost_bps | est(1) }}</td><td>{{ r.dsr | fmt(3) }}</td><td class="l">{{ r.dsr_source }}</td>
+<td>{{ r.p_vs_best_baseline | p }} ({{ r.p_holm | p }})</td>
+<td class="{{ 'yes' if r.significant else 'no' }}">{{ r.significant | yesno }}</td>
+<td>{{ r.bt_strength | fmt }}</td><td class="l {{ 'flag' if r.leakage == 'flagged' else '' }}">{{ r.leakage }}</td></tr>
+{% endfor %}
+</table></div>
+<h2>Behavioural diagnostics</h2>
+<div class="scroll"><table>
+<tr><th>Agent</th><th>Turnover/step</th><th>Over-trading x baseline</th><th>Trades/run</th><th>Range</th><th>Trade-count CV (seeds)</th>
+<th>Seed agreement</th><th>Variant agreement</th><th>Limit hits/step</th><th>Concentration</th><th>Martingale score</th>
+<th>Refusal rate</th><th>Error rate</th><th>Frozen runs</th></tr>
+{% for r in board.rows %}{% set d = r.diagnostics %}
+<tr><td class="l">{{ r.agent_id }}</td><td>{{ d.mean_turnover | fmt(3) }}</td><td>{{ d.overtrading_ratio | fmt }}</td>
+<td>{{ d.trades_per_run_mean | fmt(1) }}</td><td>{{ d.trades_per_run_min }}-{{ d.trades_per_run_max }}</td>
+<td>{{ d.trade_count_cv_across_seeds | fmt }}</td><td>{{ d.seed_agreement | fmt }}</td><td>{{ d.variant_agreement | fmt }}</td>
+<td>{{ d.limit_hit_rate | fmt(3) }}</td><td>{{ d.concentration | fmt }}</td><td>{{ d.martingale_score | fmt }}</td>
+<td>{{ d.refusal_rate | fmt(3) }}</td><td>{{ d.error_rate | fmt(3) }}</td><td>{{ d.frozen_runs }}/{{ d.n_runs }}</td></tr>
+{% endfor %}
+</table></div>
+{% for title, probs in [("Pairwise win probability P(row beats column), bootstrap", board.win_prob_bootstrap), ("Pairwise win probability P(row beats column), Bradley-Terry", board.win_prob_bradley_terry)] %}
+<h2>{{ title }}</h2>
+<div class="scroll"><table>
+<tr><th></th>{% for b in ids %}<th>{{ b }}</th>{% endfor %}</tr>
+{% for a in ids %}<tr><td class="l">{{ a }}</td>{% for b in ids %}<td>{% if a == b %}-{% else %}{{ probs[a][b] | fmt }}{% endif %}</td>{% endfor %}</tr>
+{% endfor %}
+</table></div>
+{% endfor %}
+</main></body>
+</html>

@@ -229,8 +229,8 @@ class GatewayBackend(Protocol):
     def tools(self, session: SessionInfo) -> AbstractAsyncContextManager[GatewayTools]: ...
 
 
-GatewayFactory = Callable[[int, int], AbstractAsyncContextManager[GatewayBackend]]
-"""Yields the gateway backend for a season cell ``(episode, seed)``."""
+GatewayFactory = Callable[[int], AbstractAsyncContextManager[GatewayBackend]]
+"""Yields the gateway backend for one season episode."""
 
 
 class HttpGateway:
@@ -258,10 +258,10 @@ class HttpGateway:
 
 
 def http_gateway_factory(settings: GatewaySettings) -> GatewayFactory:
-    """Every cell uses the same real gateway; the market is whatever I2 serves at ``known_at``."""
+    """Every episode uses the same real gateway; the market is whatever I2 serves at ``known_at``."""
 
     @asynccontextmanager
-    async def factory(_episode: int, _seed: int) -> AsyncIterator[GatewayBackend]:
+    async def factory(_episode: int) -> AsyncIterator[GatewayBackend]:
         async with httpx.AsyncClient(base_url=settings.admin_url, timeout=settings.timeout_s) as admin_http:
             yield HttpGateway(settings, admin_http)
 

@@ -94,7 +94,7 @@ class AuditEntry:
 
 
 class FakeGateway:
-    """Fake gateway for one season cell (one synthetic market)."""
+    """Fake gateway for one season episode (one synthetic market)."""
 
     def __init__(
         self,
@@ -505,25 +505,25 @@ def fake_gateway_factory(
     season: SeasonConfig,
     pricing: Mapping[str, ModelPrice],
     gateway_settings: GatewaySettings,
-    registry: dict[tuple[int, int], FakeGateway] | None = None,
+    registry: dict[int, FakeGateway] | None = None,
 ) -> GatewayFactory:
-    """One fake gateway per cell, each serving that cell's synthetic market.
+    """One fake gateway per episode, each serving that episode's synthetic market.
 
     ``registry`` (optional) collects the fakes so tests can inspect sessions and the audit log.
     """
     admin_key = gateway_settings.admin_key.get_secret_value() if gateway_settings.admin_key else None
 
     @asynccontextmanager
-    async def factory(episode: int, seed: int) -> AsyncIterator[GatewayBackend]:
+    async def factory(episode: int) -> AsyncIterator[GatewayBackend]:
         fake = FakeGateway(
             season,
-            SyntheticMarket(season, episode, seed),
+            SyntheticMarket(season, episode),
             pricing,
             admin_key,
             gateway_settings.admin_key_header,
         )
         if registry is not None:
-            registry[(episode, seed)] = fake
+            registry[episode] = fake
         transport = httpx.ASGITransport(app=fake.app)
         async with httpx.AsyncClient(transport=transport, base_url=_IN_PROCESS_BASE_URL) as http:
             yield FakeGatewayBackend(fake, AdminClient(http, gateway_settings))

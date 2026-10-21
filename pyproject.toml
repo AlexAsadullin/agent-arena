@@ -59,8 +59,10 @@ packages = ["agent_arena"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-# scipy ships no type stubs; only scipy.stats/special distribution functions are used.
-module = ["scipy", "scipy.*"]
+# These ship no type information and the platform constraints carry no stub packages for them.
+# Only a few well-known entry points are used (scipy.stats distributions, yaml.safe_load,
+# pyarrow.table / parquet.write_table), each wrapped in typed functions in this package.
+module = ["scipy", "scipy.*", "yaml", "pyarrow", "pyarrow.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

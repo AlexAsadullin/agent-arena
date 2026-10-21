@@ -97,6 +97,7 @@ class StatsSettings(BaseModel):
     ci_level: float = Field(gt=0, lt=1)
     alpha: float = Field(gt=0, lt=1)
     dsr_pass_threshold: float = Field(gt=0, lt=1)
+    bradley_terry_prior: float = Field(ge=0)
     bradley_terry_max_iter: int = Field(ge=1)
     bradley_terry_tol: float = Field(gt=0)
     seed: int
@@ -159,4 +160,4 @@ class ArenaSettings(BaseSettings):
 
 def load_settings() -> ArenaSettings:
     """Load settings from the YAML file named by ``ARENA_SETTINGS_FILE`` plus the environment."""
-    return ArenaSettings()  # type: ignore[call-arg]  # fields are filled by the settings sources
+    return ArenaSettings()

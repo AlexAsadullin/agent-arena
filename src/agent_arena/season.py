@@ -1,8 +1,8 @@
 """Season definitions: who competes, on what, for how long, across which seeds and prompt variants.
 
-A season is a grid of *cells* ``(episode, seed)``. Every agent sees the same market path in a
-given cell, so comparisons between agents are paired. LLM agents are additionally run once per
-prompt variant inside each cell; baselines ignore prompts and run once per cell.
+An *episode* is one market window; every agent sees the same market path in an episode, so
+comparisons between agents are paired by episode. Inside an episode each LLM agent runs once per
+``seed x prompt variant`` (its replicates); baselines ignore prompts and run once per seed.
 """
 
 from __future__ import annotations

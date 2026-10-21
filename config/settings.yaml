@@ -83,6 +83,8 @@ stats:
   ci_level: 0.95
   alpha: 0.05
   dsr_pass_threshold: 0.95
+  # Pseudo-games per pair (split evenly) so Bradley-Terry stays finite for unbeaten agents.
+  bradley_terry_prior: 0.5
   bradley_terry_max_iter: 500
   bradley_terry_tol: 1.0e-9
   seed: 20261021

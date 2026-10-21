@@ -1,0 +1,94 @@
+# Offline demo season: three scripted "LLM" agents with different behaviour plus four quant baselines,
+# across 4 synthetic regimes x 3 seeds x 3 prompt variants, against the in-process fake gateway.
+season_id: synthetic-s1
+description: Synthetic season with known-behaviour scripted agents (not market evidence).
+venue: SYNTH
+symbols: [BTC-USDT-PERP, ETH-USDT-PERP]
+channel: trades
+bar_seconds: 3600
+start: "2025-01-06T00:00:00Z"
+steps_per_episode: 96
+lookback_bars: 48
+episode_gap_bars: 0
+episodes: 4
+seeds: [0, 1, 2]
+prompt_variants: [neutral, risk_averse, aggressive]
+max_weight: 1.0
+periods_per_year: 8760
+features: [ret_24, vol_24, z_24]
+forecast_model: naive-drift
+forecast_horizon: 1
+
+budgets:
+  capital: 10000
+  max_drawdown: 0.25
+  max_order_notional: 8000
+  max_position_notional: 9000
+  max_orders_per_step: 4
+  token_spend_usd: 5.0
+  max_latency_ms: 20000
+
+market:
+  seed: 7
+  trades_per_bar: 4
+  fee_bps: 5.0
+  initial_prices: {BTC-USDT-PERP: 60000.0, ETH-USDT-PERP: 3000.0}
+  regimes:
+    - {name: trend_up, drift: 0.0005, vol: 0.006, phi: 0.05}
+    - {name: mean_revert, drift: 0.0, vol: 0.006, phi: -0.35}
+    - {name: trend_down, drift: -0.0005, vol: 0.006, phi: 0.05}
+    - {name: momentum, drift: 0.0, vol: 0.006, phi: 0.25}
+
+agents:
+  - kind: llm
+    id: llm-trend-chaser
+    provider: scripted
+    model: scripted/trend-chaser
+    behaviour: trend_chaser
+    params:
+      lookback: 12
+      gain: 0.6
+      noise: 0.25
+      chars_per_token: 4
+      base_latency_ms: 2500
+      ms_per_output_token: 15
+      latency_jitter_ms: 800
+      rationale_words: 30
+      keyword_scales: {aggressive: 1.6, "capital preservation": 0.5}
+  - kind: llm
+    id: llm-cautious-contrarian
+    provider: scripted
+    model: scripted/cautious-contrarian
+    behaviour: cautious_contrarian
+    params:
+      lookback: 24
+      z_scale: 2.0
+      weight: 0.3
+      rebalance_band: 0.1
+      chars_per_token: 4
+      base_latency_ms: 600
+      ms_per_output_token: 5
+      latency_jitter_ms: 100
+      rationale_words: 8
+      keyword_scales: {aggressive: 1.5, "capital preservation": 0.7}
+  - kind: llm
+    id: llm-martingale-gambler
+    provider: scripted
+    model: scripted/martingale-gambler
+    behaviour: martingale_gambler
+    params:
+      base_weight: 0.15
+      multiplier: 2.0
+      refusal_rate: 0.04
+      error_rate: 0.05
+      refusal_text: "I cannot provide financial advice."
+      chars_per_token: 4
+      base_latency_ms: 4000
+      ms_per_output_token: 20
+      latency_jitter_ms: 1500
+      rationale_words: 60
+      keyword_scales: {aggressive: 1.5, "capital preservation": 0.6}
+  - {kind: baseline, id: buy-and-hold, strategy: buy_and_hold, params: {weight: 0.5}}
+  - {kind: baseline, id: ts-momentum, strategy: ts_momentum, params: {weight: 0.5, lookback: 24}}
+  - {kind: baseline, id: mean-reversion, strategy: mean_reversion, params: {weight: 0.5, lookback: 24, z_scale: 2.0}}
+  - {kind: baseline, id: random, strategy: random, params: {weight: 0.5}}
