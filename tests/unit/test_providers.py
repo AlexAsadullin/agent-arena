@@ -57,7 +57,9 @@ async def test_anthropic_request_and_parse() -> None:
 async def test_anthropic_refusal_and_errors() -> None:
     respx.post(f"{BASE}/v1/messages").mock(
         side_effect=[
-            httpx.Response(200, json={"content": [], "usage": {"input_tokens": 1, "output_tokens": 0}, "stop_reason": "refusal"}),
+            httpx.Response(
+                200, json={"content": [], "usage": {"input_tokens": 1, "output_tokens": 0}, "stop_reason": "refusal"}
+            ),
             httpx.Response(529, text="overloaded"),
             httpx.Response(200, json={"content": "oops"}),
             httpx.ConnectError("boom"),
@@ -113,6 +115,10 @@ async def test_openai_compat_refusal_and_malformed() -> None:
 async def test_missing_key_or_url_fails_before_network() -> None:
     async with httpx.AsyncClient() as http:
         with pytest.raises(ProviderError, match="API key"):
-            await OpenAICompatProvider(ProviderSettings(kind="openai_compat", base_url=BASE), "m", http).complete("s", "u")
+            await OpenAICompatProvider(ProviderSettings(kind="openai_compat", base_url=BASE), "m", http).complete(
+                "s", "u"
+            )
         with pytest.raises(ProviderError, match="base_url"):
-            await AnthropicProvider(ProviderSettings(kind="anthropic", api_key=SecretStr("k")), "m", http).complete("s", "u")
+            await AnthropicProvider(ProviderSettings(kind="anthropic", api_key=SecretStr("k")), "m", http).complete(
+                "s", "u"
+            )

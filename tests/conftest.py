@@ -5,6 +5,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+import structlog
 
 from agent_arena.season import SeasonConfig, load_season
 from agent_arena.settings import ArenaSettings
@@ -22,6 +23,8 @@ def _isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[N
     for var in ("ARENA_GATEWAY__ADMIN_KEY", "ARENA_PROVIDERS__ANTHROPIC__API_KEY"):
         monkeypatch.delenv(var, raising=False)
     yield
+    # The CLI binds structlog to the (test-captured) stderr; unbind it so later tests do not write to a closed stream.
+    structlog.reset_defaults()
 
 
 @pytest.fixture

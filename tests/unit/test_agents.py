@@ -12,7 +12,13 @@ from agent_arena.agents.providers import ProviderError
 from agent_arena.agents.scripted import ScriptedProvider
 from agent_arena.season import BaselineAgentConfig
 
-COMMON = {"chars_per_token": 4, "base_latency_ms": 100, "ms_per_output_token": 1, "latency_jitter_ms": 10, "rationale_words": 3}
+COMMON = {
+    "chars_per_token": 4,
+    "base_latency_ms": 100,
+    "ms_per_output_token": 1,
+    "latency_jitter_ms": 10,
+    "rationale_words": 3,
+}
 VARIANT = PromptVariant(system="be $symbols", user="<observation>\n$observation_json\n</observation>")
 
 
@@ -64,7 +70,14 @@ async def test_contrarian_band_holds_position() -> None:
 
 
 async def test_martingale_doubles_after_losses() -> None:
-    params = {**COMMON, "base_weight": 0.1, "multiplier": 2.0, "refusal_rate": 0.0, "error_rate": 0.0, "refusal_text": "no"}
+    params = {
+        **COMMON,
+        "base_weight": 0.1,
+        "multiplier": 2.0,
+        "refusal_rate": 0.0,
+        "error_rate": 0.0,
+        "refusal_text": "no",
+    }
     p = ScriptedProvider("m", "martingale_gambler", params, 0)
     first = await ask(p, obs(UP, equity=1000))
     second = await ask(p, obs(UP, equity=990))
@@ -74,7 +87,14 @@ async def test_martingale_doubles_after_losses() -> None:
 
 
 async def test_martingale_refuses_and_errors() -> None:
-    params = {**COMMON, "base_weight": 0.1, "multiplier": 2.0, "refusal_rate": 1.0, "error_rate": 0.0, "refusal_text": "I cannot"}
+    params = {
+        **COMMON,
+        "base_weight": 0.1,
+        "multiplier": 2.0,
+        "refusal_rate": 1.0,
+        "error_rate": 0.0,
+        "refusal_text": "I cannot",
+    }
     system, user = render_prompt(VARIANT, obs(UP))
     assert (await ScriptedProvider("m", "martingale_gambler", params, 0).complete(system, user)).text == "I cannot"
     params.update(refusal_rate=0.0, error_rate=1.0)

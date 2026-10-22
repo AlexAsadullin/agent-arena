@@ -43,7 +43,7 @@ def test_time_roundtrip() -> None:
     assert iso(ts).endswith("Z")
     assert parse_iso("2025-01-01T03:00:00+03:00") == datetime(2025, 1, 1, tzinfo=UTC)
     with pytest.raises(ValueError, match="naive"):
-        to_ns(datetime(2025, 1, 1))  # noqa: DTZ001
+        to_ns(datetime(2025, 1, 1))
     with pytest.raises(ValueError, match="timezone"):
         parse_iso("2025-01-01T00:00:00")
 
@@ -67,7 +67,9 @@ def test_season_validation() -> None:
         SeasonConfig.model_validate({**raw, "symbols": ["X"]})
     with pytest.raises(ValidationError, match="timezone"):
         SeasonConfig.model_validate({**raw, "start": "2025-01-01T00:00:00"})
-    shifted = SeasonConfig.model_validate({**raw, "start": datetime(2025, 1, 1, 3, tzinfo=timezone(timedelta(hours=3)))})
+    shifted = SeasonConfig.model_validate(
+        {**raw, "start": datetime(2025, 1, 1, 3, tzinfo=timezone(timedelta(hours=3)))}
+    )
     assert shifted.start.tzinfo == UTC
 
 
@@ -104,14 +106,22 @@ def test_bar_closes_takes_last_trade_per_bar() -> None:
 
 def test_parse_tool_result_shapes() -> None:
     def result(text: str, structured: object = None, error: bool = False) -> CallToolResult:
-        return CallToolResult(content=[TextContent(type="text", text=text)], structured_content=structured, is_error=error)
+        return CallToolResult(
+            content=[TextContent(type="text", text=text)], structured_content=structured, is_error=error
+        )
 
     assert parse_tool_result(result("", {"a": 1})) == {"a": 1}
     assert parse_tool_result(result('{"b": 2}')) == {"b": 2}
-    refused = parse_tool_result(result("", {"refused": True, "code": "time_travel", "reason": "r", "frozen": True}))
+    refused = parse_tool_result(
+        result("", {"refused": True, "code": "budget_breached", "message": "m", "session_status": "frozen"})
+    )
     assert isinstance(refused, Refusal)
     assert refused.frozen
-    assert isinstance(parse_tool_result(result("", {"status": "refused"})), Refusal)
+    body = '{"refused": true, "code": "time_travel", "message": "late", "details": {}, "session_status": "active"}'
+    text_refusal = parse_tool_result(result(body, error=True))
+    assert isinstance(text_refusal, Refusal)
+    assert (text_refusal.code, text_refusal.frozen) == ("time_travel", False)
+    assert parse_tool_result(result("")) == {}
     err = parse_tool_result(result("bad", error=True))
     assert isinstance(err, Refusal)
     assert err.code == "tool_error"

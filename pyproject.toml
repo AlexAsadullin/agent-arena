@@ -89,3 +89,7 @@ constraint-dependencies = [
     "starlette==1.9.0",
     "uvicorn==0.54.0",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Test tables of literal payloads read better on one line.
+"tests/**" = ["E501"]
