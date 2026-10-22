@@ -38,15 +38,20 @@ class MarketConfig(BaseModel):
 
 
 class BudgetConfig(BaseModel):
-    """Per-session budgets requested from the gateway when a session is created."""
+    """Per-session budget overrides sent to the gateway (I9 names; unset fields keep I9 defaults).
 
-    capital: float = Field(gt=0)
-    max_drawdown: float = Field(gt=0, le=1)
-    max_order_notional: float = Field(gt=0)
-    max_position_notional: float = Field(gt=0)
-    max_orders_per_step: int = Field(ge=1)
-    token_spend_usd: float = Field(ge=0)
-    max_latency_ms: float = Field(gt=0)
+    ``capital`` is the gateway's maximum gross exposure after a trade, in quote currency.
+    """
+
+    capital: float | None = Field(default=None, gt=0)
+    max_drawdown: float | None = Field(default=None, gt=0, lt=1)
+    max_order_notional: float | None = Field(default=None, gt=0)
+    max_orders_per_window: int | None = Field(default=None, ge=1)
+    order_window_s: float | None = Field(default=None, gt=0)
+    max_tokens: int | None = Field(default=None, gt=0)
+    max_token_cost_usd: float | None = Field(default=None, gt=0)
+    max_latency_ms: float | None = Field(default=None, gt=0)
+    max_total_latency_ms: float | None = Field(default=None, gt=0)
 
 
 class LLMAgentConfig(BaseModel):
@@ -87,6 +92,8 @@ class SeasonConfig(BaseModel):
     episodes: int = Field(ge=1)
     seeds: list[int] = Field(min_length=1)
     prompt_variants: list[str] = Field(min_length=1)
+    # Starting equity of every run's account (quote currency, which is also the token price currency).
+    capital: float = Field(gt=0)
     max_weight: float = Field(gt=0)
     periods_per_year: float = Field(gt=0)
     features: list[str] = Field(default_factory=list)

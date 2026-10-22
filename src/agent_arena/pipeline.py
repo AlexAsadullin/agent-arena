@@ -51,7 +51,7 @@ def build_trials(season: SeasonConfig, runs: Sequence[RunResult], settings: Aren
             "net_sharpe": run_sharpe(run, season.periods_per_year),
             "gross_sharpe": run_sharpe(run, season.periods_per_year, gross=True),
             "net_return": run_total_return(run),
-            "intelligence_cost_bps": run_intel_cost_bps(run, season.budgets.capital),
+            "intelligence_cost_bps": run_intel_cost_bps(run, season.capital),
             "token_cost_usd": sum(s.token_cost for s in run.steps),
             "latency_cost_usd": sum(s.latency_cost for s in run.steps),
             "turnover": sum(s.turnover for s in run.steps),

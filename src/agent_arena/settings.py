@@ -32,7 +32,8 @@ class GatewaySettings(BaseModel):
 
     mcp_url: str
     admin_url: str
-    admin_key_header: str
+    admin_auth_header: str
+    admin_auth_scheme: str
     agent_auth_header: str
     agent_auth_scheme: str
     session_header: str

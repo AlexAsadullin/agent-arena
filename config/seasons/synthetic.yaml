@@ -13,6 +13,7 @@ episode_gap_bars: 0
 episodes: 6
 seeds: [0, 1, 2]
 prompt_variants: [neutral, risk_averse, aggressive]
+capital: 10000
 max_weight: 1.0
 periods_per_year: 8760
 features: [ret_24, vol_24, z_24]
@@ -20,12 +21,12 @@ forecast_model: null
 forecast_horizon: 1
 
 budgets:
-  capital: 10000
+  capital: 15000
   max_drawdown: 0.25
-  max_order_notional: 8000
-  max_position_notional: 9000
-  max_orders_per_step: 4
-  token_spend_usd: 5.0
+  max_order_notional: 12000
+  max_orders_per_window: 4
+  order_window_s: 3600
+  max_token_cost_usd: 5.0
   max_latency_ms: 20000
 
 market:

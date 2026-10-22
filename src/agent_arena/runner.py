@@ -136,16 +136,19 @@ class ArenaRunner:
         agent = self.agents.build(spec.agent, spec.variant, spec.seed)
         started = utcnow()
         t0 = season.step_time(spec.episode, 0)
-        session_agent_id = f"{spec.agent.id}/{spec.variant or 'baseline'}/e{spec.episode}/s{spec.seed}"
+        session_agent_id = f"{spec.agent.id}:{spec.variant or 'baseline'}:e{spec.episode}:s{spec.seed}"
         session = await gateway.admin.create_session(
-            session_agent_id, iso(t0), SessionBudgets(**season.budgets.model_dump(exclude={"schema_version"}))
+            session_agent_id, iso(t0), SessionBudgets(**season.budgets.model_dump())
         )
-        ledger = Ledger(season.budgets.capital)
+        ledger = Ledger(season.capital)
         steps: list[StepRecord] = []
         frozen_reason: str | None = None
         model = spec.agent.model if spec.agent.kind == "llm" else None
         async with gateway.tools(session) as tools:
-            closes = await self._window(tools, t0)
+            first = await self._window(tools, t0)
+            if isinstance(first, Refusal):
+                raise GatewayError(f"market_data refused at session start: {first.code} {first.message}")
+            closes = first
             for step in range(season.steps_per_episode):
                 record, frozen_reason, closes = await self._step(
                     gateway, tools, session.session_id, agent, spec, step, ledger, closes, frozen_reason
@@ -209,7 +212,7 @@ class ArenaRunner:
                 decision.usage.model,
             )
             if isinstance(ack, Refusal) and ack.frozen:
-                frozen_reason = ack.reason or ack.code
+                frozen_reason = str(ack.details.get("kind", ack.code))
 
         execution = _Execution(traded_notional=Decimal(0))
         if frozen_reason is None and decision.status == "ok":
@@ -223,7 +226,10 @@ class ArenaRunner:
 
         t_next = season.step_time(spec.episode, step + 1)
         await gateway.admin.set_clock(session_id, iso(t_next))
-        closes_next = await self._window(tools, t_next)
+        window = await self._window(tools, t_next) if frozen_reason is None else None
+        if isinstance(window, Refusal):
+            frozen_reason = frozen_reason or window.code
+        closes_next = window if isinstance(window, dict) else await self._frozen_marks(tools, closes)
         equity_next = ledger.equity({s: c[-1] for s, c in closes_next.items()})
         e_now = float(equity)
         ret_net = float(equity_next - equity) / e_now if e_now > 0 else 0.0
@@ -268,7 +274,7 @@ class ArenaRunner:
         season = self.season
         budget = await tools.budget()
         if isinstance(budget, Refusal):
-            return budget.reason or budget.code
+            return budget.code
         if budget.frozen:
             return budget.frozen_reason or "frozen"
         start = iso(t - season.lookback_bars * season.bar)
@@ -277,15 +283,13 @@ class ArenaRunner:
         if season.features:
             feats = await tools.features(season.features, season.symbols, start, iso(t))
             if not isinstance(feats, Refusal):
-                for f in feats.features:
+                for f in feats.values():
                     features.setdefault(f.symbol, {})[f.name] = f.value
         forecasts: dict[str, float] = {}
         if season.forecast_model is not None:
             fc = await tools.forecast(season.forecast_model, season.symbols, season.forecast_horizon)
             if not isinstance(fc, Refusal):
                 forecasts = {item.symbol: item.mean for item in fc.forecasts}
-        limit = budget.limits.get("token_spend_usd")
-        used = budget.used.get("token_spend_usd", 0.0)
         equity = float(ledger.equity(prices))
         return Observation(
             season_id=season.season_id,
@@ -301,7 +305,7 @@ class ArenaRunner:
             equity=equity,
             cash=float(ledger.cash),
             max_weight=season.max_weight,
-            token_budget_left_usd=None if limit is None else limit - used,
+            token_budget_left_usd=budget.remaining.get("token_cost_usd"),
         )
 
     async def _execute(
@@ -339,25 +343,30 @@ class ArenaRunner:
             result.n_orders += 1
             if isinstance(order, Refusal):
                 result.n_rejected += 1
-                result.reasons.append(order.code)
+                result.reasons.append(str(order.details.get("check", order.code)))
                 if order.frozen:
-                    result.frozen_reason = order.reason or order.code
+                    result.frozen_reason = order.code
                     break
                 continue
-            if order.status == "rejected":
+            placed = order.order
+            if placed.status == "rejected":
                 result.n_rejected += 1
-                result.reasons.append(order.reject_reason or "rejected")
+                result.reasons.append(placed.reject_reason or "rejected")
                 continue
-            if order.status not in ("filled", "partially_filled"):
+            # A market order that I6 accepted is treated as filled at the reference price.
+            if placed.status not in ("filled", "partially_filled", "accepted"):
                 continue
-            qty = order.filled_qty if order.filled_qty is not None else abs(delta)
-            fill_price = order.avg_price if order.avg_price is not None else price
-            fee = order.fee if order.fee is not None else qty * fill_price * settings.fallback_fee_bps / float(BPS)
+            qty = placed.filled_qty if placed.filled_qty is not None else abs(delta)
+            fill_price = placed.avg_price or order.reference_price or price
+            fee_reported = placed.fee
+            fee = (
+                fee_reported if fee_reported is not None else qty * fill_price * settings.fallback_fee_bps / float(BPS)
+            )
             ledger.apply_fill(symbol, qty if side == "buy" else -qty, fill_price, fee)
             result.traded_notional += dec(qty) * dec(fill_price)
         return result
 
-    async def _window(self, tools: GatewayTools, t: datetime) -> dict[str, list[float]]:
+    async def _window(self, tools: GatewayTools, t: datetime) -> dict[str, list[float]] | Refusal:
         """Bar closes per symbol for the look-back window ending at ``t`` (last close = price at ``t``)."""
         season = self.season
         start = iso(t - season.lookback_bars * season.bar)
@@ -365,9 +374,24 @@ class ArenaRunner:
         for symbol in season.symbols:
             data = await tools.market_data(season.venue, symbol, season.channel, start, iso(t))
             if isinstance(data, Refusal):
-                raise GatewayError(f"market_data refused at {iso(t)}: {data.code} {data.reason}")
+                if data.frozen:
+                    return data
+                raise GatewayError(f"market_data refused at {iso(t)}: {data.code} {data.message}")
             closes = bar_closes(data.rows, t, season.lookback_bars + 1, self._bar_ns)
             if not closes:
                 raise GatewayError(f"no trades for {symbol} in the window ending {iso(t)}")
             out[symbol] = closes
         return out
+
+    async def _frozen_marks(self, tools: GatewayTools, last: dict[str, list[float]]) -> dict[str, list[float]]:
+        """Marks for a frozen session, where I9 still answers ``positions`` but not ``market_data``.
+
+        Held symbols take the gateway's mark price; flat symbols carry their last close.
+        """
+        marks = {s: list(c) for s, c in last.items()}
+        held = await tools.positions()
+        if not isinstance(held, Refusal):
+            for p in held.positions:
+                if p.symbol in marks and p.mark_price is not None:
+                    marks[p.symbol] = [*marks[p.symbol][1:], p.mark_price]
+        return marks

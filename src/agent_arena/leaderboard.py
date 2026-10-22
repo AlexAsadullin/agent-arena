@@ -126,7 +126,7 @@ def build_leaderboard(
     net = {r.run_id: run_sharpe(r, ppy) for r in runs}
     gross = {r.run_id: run_sharpe(r, ppy, gross=True) for r in runs}
     total = {r.run_id: run_total_return(r) * 100.0 for r in runs}
-    intel = {r.run_id: run_intel_cost_bps(r, season.budgets.capital) for r in runs}
+    intel = {r.run_id: run_intel_cost_bps(r, season.capital) for r in runs}
 
     draws = EpisodeDraws.draw(len(episodes), stats.bootstrap_samples, rng)
 

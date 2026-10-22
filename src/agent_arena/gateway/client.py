@@ -55,26 +55,27 @@ class ToolCaller(Protocol):
 def parse_tool_result(result: CallToolResult) -> dict[str, Any] | Refusal:
     """Turn an MCP tool result into a JSON object or a :class:`Refusal`.
 
-    Refusals are recognised in three shapes: an MCP error result (``isError``), an object with
-    ``"refused": true``, or an object with ``"status": "refused"``.
+    A refusal is an error result (``isError``) or any object with ``"refused": true``; its body
+    ``{code, message, details, session_status}`` is kept. An error without such a body becomes a
+    ``tool_error`` refusal carrying the error text.
     """
     text = " ".join(c.text for c in result.content if isinstance(c, TextContent))
-    if result.is_error:
-        return Refusal(code="tool_error", reason=text or "tool error")
     data: Any = result.structured_content
-    if data is None:
+    if data is None and text:
         try:
-            data = json.loads(text) if text else {}
+            data = json.loads(text)
         except json.JSONDecodeError as exc:
-            raise GatewayError(f"tool returned non-JSON content: {text[:200]}") from exc
+            if not result.is_error:
+                raise GatewayError(f"tool returned non-JSON content: {text[:200]}") from exc
+            data = None
+    if isinstance(data, dict) and data.get("refused") is True:
+        return Refusal.model_validate(data)
+    if result.is_error:
+        return Refusal(code="tool_error", message=text or "tool error")
+    if data is None:
+        return {}
     if not isinstance(data, dict):
         raise GatewayError(f"tool returned {type(data).__name__}, expected an object")
-    if data.get("refused") is True or data.get("status") == "refused":
-        return Refusal(
-            code=str(data.get("code", "refused")),
-            reason=str(data.get("reason", "")),
-            frozen=bool(data.get("frozen", False)),
-        )
     return data
 
 
@@ -190,12 +191,11 @@ class AdminClient:
         self._settings = settings
 
     def _headers(self) -> dict[str, str]:
-        key = self._settings.admin_key
-        return {self._settings.admin_key_header: key.get_secret_value()} if key else {}
+        return admin_headers(self._settings)
 
     async def create_session(self, agent_id: str, known_at: str, budgets: SessionBudgets) -> SessionInfo:
         body = CreateSessionRequest(agent_id=agent_id, mode=self._settings.mode, known_at=known_at, budgets=budgets)
-        resp = await self._post("/admin/v1/sessions", body.model_dump(mode="json"))
+        resp = await self._post("/admin/v1/sessions", body.model_dump(mode="json", exclude_none=True))
         return SessionInfo.model_validate(resp)
 
     async def set_clock(self, session_id: str, known_at: str) -> ClockInfo:
@@ -218,6 +218,22 @@ class AdminClient:
         if not isinstance(data, dict):
             raise GatewayError(f"POST {path} returned a non-object body")
         return data
+
+
+def admin_headers(settings: GatewaySettings) -> dict[str, str]:
+    """``Authorization: Bearer <admin key>`` (header and scheme from settings)."""
+    key = settings.admin_key
+    if key is None:
+        return {}
+    return {settings.admin_auth_header: f"{settings.admin_auth_scheme} {key.get_secret_value()}".strip()}
+
+
+def agent_headers(settings: GatewaySettings, session: SessionInfo) -> dict[str, str]:
+    """MCP credentials: the session's one-time API key, else the admin key plus the session header."""
+    key = session.api_key or (settings.agent_key.get_secret_value() if settings.agent_key else None)
+    if key:
+        return {settings.agent_auth_header: f"{settings.agent_auth_scheme} {key}".strip()}
+    return {**admin_headers(settings), settings.session_header: session.session_id}
 
 
 class GatewayBackend(Protocol):

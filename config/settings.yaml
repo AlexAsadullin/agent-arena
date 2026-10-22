@@ -15,11 +15,15 @@ gateway:
   # I9 risk-gated MCP gateway (contract 6.6).
   mcp_url: http://127.0.0.1:8608/mcp
   admin_url: http://127.0.0.1:8608
-  admin_key_header: X-Admin-Key
+  # Admin calls: "Authorization: Bearer <admin key>". MCP calls: the session api_key as a bearer token,
+  # or (when no key was returned) the admin key plus the session header.
+  admin_auth_header: Authorization
+  admin_auth_scheme: Bearer
   agent_auth_header: Authorization
   agent_auth_scheme: Bearer
-  session_header: X-Session-Id
-  mode: research
+  session_header: X-Gateway-Session
+  # I9 research sessions cannot trade, so arena sessions are paper sessions pinned to a session clock.
+  mode: paper
   timeout_s: 30.0
   # Clock-advance requests that fail transiently are retried this many times.
   clock_retries: 2
