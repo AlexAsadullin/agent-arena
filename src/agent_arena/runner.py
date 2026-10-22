@@ -283,7 +283,7 @@ class ArenaRunner:
         if season.features:
             feats = await tools.features(season.features, season.symbols, start, iso(t))
             if not isinstance(feats, Refusal):
-                for f in feats.values():
+                for f in feats.values(season.features):
                     features.setdefault(f.symbol, {})[f.name] = f.value
         forecasts: dict[str, float] = {}
         if season.forecast_model is not None:
@@ -357,7 +357,7 @@ class ArenaRunner:
             if placed.status not in ("filled", "partially_filled", "accepted"):
                 continue
             qty = placed.filled_qty if placed.filled_qty is not None else abs(delta)
-            fill_price = placed.avg_price or order.reference_price or price
+            fill_price = self._fill_price(placed.avg_price, placed.price, order.reference_price, price)
             fee_reported = placed.fee
             fee = (
                 fee_reported if fee_reported is not None else qty * fill_price * settings.fallback_fee_bps / float(BPS)
@@ -382,6 +382,21 @@ class ArenaRunner:
                 raise GatewayError(f"no trades for {symbol} in the window ending {iso(t)}")
             out[symbol] = closes
         return out
+
+    def _fill_price(
+        self, avg_price: float | None, order_price: float | None, reference: float | None, mark: float
+    ) -> float:
+        """Fill price of a market order: the reported fill, else the configured fallback source.
+
+        ``accounting.fill_price_source`` = ``order`` trusts the order's price (contract 6.4); ``reference``
+        uses the gateway's I2 reference price at the session clock, which is right when the exchange
+        behind the gateway does not replay the session's history (the offline I9 fakes fill at wall clock).
+        """
+        if avg_price is not None:
+            return avg_price
+        if self.settings.accounting.fill_price_source == "order" and order_price is not None:
+            return order_price
+        return reference if reference is not None else mark
 
     async def _frozen_marks(self, tools: GatewayTools, last: dict[str, list[float]]) -> dict[str, list[float]]:
         """Marks for a frozen session, where I9 still answers ``positions`` but not ``market_data``.

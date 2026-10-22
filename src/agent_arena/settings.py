@@ -85,6 +85,7 @@ class ModelPrice(BaseModel):
 
 class AccountingSettings(BaseModel):
     fallback_fee_bps: float = Field(ge=0)
+    fill_price_source: Literal["order", "reference"]
     min_order_notional: float = Field(ge=0)
 
 

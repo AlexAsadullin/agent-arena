@@ -94,7 +94,7 @@ async def test_time_travel_is_refused(harness: Harness) -> None:
         assert isinstance(inverted, Refusal)
         feats = await tools.features(["ret_3", "vol_3", "z_3", "nope", "ret_x"], s.symbols, iso(t0 - s.bar), iso(t0))
         assert not isinstance(feats, Refusal)
-        values = {(f.symbol, f.name): f.value for f in feats.values()}
+        values = {(f.symbol, f.name): f.value for f in feats.values(["ret_3", "vol_3", "z_3", "nope", "ret_x"])}
         assert values[(s.symbols[0], "nope")] is None
         assert values[(s.symbols[0], "vol_3")] is not None
         clock = await tools.clock()
@@ -118,7 +118,8 @@ async def test_orders_budgets_and_freeze(harness: Harness) -> None:
         filled = await tools.place_order(s.venue, sym, "buy", "market", 4000 / price, "sid", "why")
         assert isinstance(filled, OrderResult)
         assert filled.order.status == "filled"
-        assert filled.order.fee == pytest.approx(4000 * s.market.fee_bps / 10_000)
+        assert filled.order.price == pytest.approx(price)
+        assert filled.order.fee is None
         over = await tools.place_order(s.venue, sym, "buy", "market", 3000 / price, "sid", "why")
         assert isinstance(over, Refusal)
         assert over.details["check"] == "capital"

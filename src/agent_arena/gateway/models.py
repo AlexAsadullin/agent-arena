@@ -14,6 +14,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_arena.timeutil import parse_iso, to_ns
+
 SCHEMA_VERSION = "1"
 
 
@@ -77,22 +79,32 @@ class ClockInfo(_Wire):
     status: str | None = None
 
 
+def _ts_ns(value: int | str) -> int:
+    """Row timestamp as int64 ns: I1 stores ints, I2 JSON answers may carry ISO-8601 strings."""
+    return value if isinstance(value, int) else to_ns(parse_iso(value))
+
+
 class TradeRow(BaseModel):
-    """One row of the I1 ``trades`` channel."""
+    """One row of the I1 ``trades`` channel as I9 returns it from I2.
+
+    I2 rows carry ``valid_time`` (when the trade happened) and ``knowledge_time``; raw I1 rows carry
+    ``ts_exchange`` and ``ts_local``. The trade time is the first one present, in that order.
+    """
 
     model_config = ConfigDict(extra="ignore")
-    ts_exchange: int | None = None
-    ts_local: int | None = None
+    ts_exchange: int | str | None = None
+    valid_time: int | str | None = None
+    ts_local: int | str | None = None
     price: float
     size: float
     side: str | None = None
 
     @property
     def ts(self) -> int:
-        value = self.ts_exchange if self.ts_exchange is not None else self.ts_local
-        if value is None:
-            raise ValueError("trade row without timestamp")
-        return value
+        for value in (self.ts_exchange, self.valid_time, self.ts_local):
+            if value is not None:
+                return _ts_ns(value)
+        raise ValueError("trade row without timestamp")
 
 
 class MarketData(_Wire):
@@ -113,14 +125,29 @@ class FeatureRow(BaseModel):
 
 
 class Features(_Wire):
+    """Feature rows from I2. I2 answers in wide format: one row per symbol and ``valid_time``, one column
+    per requested feature. Long rows (``symbol, name, value``) are accepted too."""
+
     rows: list[dict[str, Any]] = Field(default_factory=list)
 
-    def values(self) -> list[FeatureRow]:
-        out = []
-        for row in self.rows:
-            if {"symbol", "name", "value"} <= row.keys():
-                out.append(FeatureRow.model_validate(row))
-        return out
+    def values(self, names: list[str]) -> list[FeatureRow]:
+        """Latest value of each requested feature per symbol."""
+        latest: dict[tuple[str, str], tuple[int, float | None]] = {}
+        for i, row in enumerate(self.rows):
+            symbol = row.get("symbol")
+            if not isinstance(symbol, str):
+                continue
+            stamp = row.get("valid_time")
+            order = _ts_ns(stamp) if isinstance(stamp, int | str) else i
+            if {"name", "value"} <= row.keys():
+                cells = [(str(row["name"]), row["value"])]
+            else:
+                cells = [(n, row[n]) for n in names if n in row]
+            for name, value in cells:
+                number = float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
+                if (symbol, name) not in latest or order >= latest[(symbol, name)][0]:
+                    latest[(symbol, name)] = (order, number)
+        return [FeatureRow(symbol=s, name=n, value=v) for (s, n), (_, v) in sorted(latest.items())]
 
 
 class ForecastItem(BaseModel):

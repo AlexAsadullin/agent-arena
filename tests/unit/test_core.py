@@ -129,3 +129,23 @@ def test_parse_tool_result_shapes() -> None:
         parse_tool_result(result("not json"))
     with pytest.raises(GatewayError):
         parse_tool_result(result("", [1, 2]))
+
+
+def test_i2_rows_and_wide_features() -> None:
+    from agent_arena.gateway.models import Features
+
+    assert TradeRow(valid_time=5, knowledge_time=6, price=1.0, size=1.0).ts == 5
+    assert TradeRow(valid_time="1970-01-01T00:00:01Z", price=1.0, size=1.0).ts == 1_000_000_000
+    assert TradeRow(ts_exchange=3, valid_time=5, price=1.0, size=1.0).ts == 3
+    wide = Features(
+        rows=[
+            {"symbol": "A", "valid_time": 2, "ret_1h": 0.2, "price": 10.0},
+            {"symbol": "A", "valid_time": 1, "ret_1h": 0.1, "price": 9.0},
+            {"symbol": "B", "valid_time": "1970-01-01T00:00:00Z", "ret_1h": True},
+            {"valid_time": 3, "ret_1h": 1.0},
+        ]
+    )
+    got = {(f.symbol, f.name): f.value for f in wide.values(["ret_1h", "missing"])}
+    assert got == {("A", "ret_1h"): 0.2, ("B", "ret_1h"): None}
+    long = Features(rows=[{"symbol": "A", "name": "x", "value": 1.5}])
+    assert [(f.name, f.value) for f in long.values([])] == [("x", 1.5)]

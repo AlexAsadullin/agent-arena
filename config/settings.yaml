@@ -74,6 +74,9 @@ pricing:
 accounting:
   # Fallback fee when the gateway fill does not report one.
   fallback_fee_bps: 5.0
+  # Fill price when the gateway reports no explicit fill price: "order" uses the order's price (contract 6.4),
+  # "reference" the gateway's I2 reference price at the session clock.
+  fill_price_source: order
   # Orders below this notional (in account currency) are not sent.
   min_order_notional: 1.0
 

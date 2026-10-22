@@ -35,7 +35,7 @@ from agent_arena.gateway.market import SyntheticMarket
 from agent_arena.gateway.models import ClockInfo, ClockRequest, CreateSessionRequest, SessionBudgets, SessionInfo
 from agent_arena.season import SeasonConfig
 from agent_arena.settings import GatewaySettings, ModelPrice
-from agent_arena.timeutil import iso, parse_iso
+from agent_arena.timeutil import iso, parse_iso, to_ns
 
 # httpx needs an absolute base URL even for an in-process ASGI transport; it is never resolved.
 _IN_PROCESS_BASE_URL = "http://in-process"
@@ -299,7 +299,15 @@ class FakeGateway:
             if isinstance(span, CallToolResult):
                 return span
             rows = [
-                {"ts_exchange": t.ts_exchange, "price": t.price, "size": t.size, "side": t.side, "trade_id": t.trade_id}
+                {
+                    "symbol": symbol,
+                    "venue": venue,
+                    "valid_time": t.ts_exchange,
+                    "knowledge_time": t.ts_exchange,
+                    "price": t.price,
+                    "size": t.size,
+                    "side": t.side,
+                }
                 for t in market.trades(symbol, *span)
             ]
             return ok(
@@ -328,11 +336,17 @@ class FakeGateway:
             span = window(start, end)
             if isinstance(span, CallToolResult):
                 return span
+            # Wide rows, as I2 answers: one row per symbol at the query end, one column per feature.
+            stamp = to_ns(span[1])
             rows = [
-                {"ts": end, "symbol": s, "name": n, "value": _feature(market.closes_until(s, span[1]), n)}
+                {
+                    "symbol": s,
+                    "valid_time": stamp,
+                    "knowledge_time": stamp,
+                    **{n: _feature(market.closes_until(s, span[1]), n) for n in names},
+                }
                 for s in symbols
                 if s in season.symbols
-                for n in names
             ]
             return ok({"names": names, "symbols": symbols, "known_at": iso(session.known_at), "rows": rows})
 
@@ -451,9 +465,10 @@ class FakeGateway:
                 session.resting[order_id] = RestingOrder(order_id, symbol, side, qty, price)
                 self._audit(session, "place_order", "rest", {"symbol": symbol})
                 return ok({"order": {**order, "status": "accepted"}, "reference_price": mark, "notional": notional})
-            fee = self._fill(session, symbol, side, qty, mark)
+            self._fill(session, symbol, side, qty, mark)
             self._audit(session, "place_order", "fill", {"symbol": symbol, "side": side, "qty": qty})
-            filled = {**order, "status": "filled", "filled_qty": qty, "avg_price": mark, "fee": fee}
+            # Like I9 over I6: the order carries its fill price in ``price``; fees are not reported.
+            filled = {**order, "status": "filled", "price": mark}
             return ok({"order": filled, "reference_price": mark, "notional": notional, "routed_to": "i6"})
 
         @server.tool(description="Cancel a resting order.")
