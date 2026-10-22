@@ -17,6 +17,7 @@ a single-run leaderboard ignores.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -38,17 +39,28 @@ class EpisodeDraws:
 
 def point_estimate(matrix: FloatArray) -> float:
     """Mean over episodes of the per-episode replicate mean."""
-    return float(np.nanmean(np.nanmean(matrix, axis=1)))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return float(np.nanmean(np.nanmean(matrix, axis=1)))
 
 
 def bootstrap_means(matrix: FloatArray, draws: EpisodeDraws, rng: np.random.Generator) -> FloatArray:
     """Bootstrap distribution of :func:`point_estimate` (length ``n_boot``)."""
     n_boot, n_episodes = draws.index.shape
     n_rep = matrix.shape[1]
-    picks = rng.integers(0, n_rep, size=(n_boot, n_episodes, n_rep))
-    episode_rows = matrix[draws.index]  # (n_boot, n_episodes, n_rep)
+    # Replicate order is irrelevant, so move NaN padding to the end of each row and draw only
+    # among the valid replicates of each episode (an episode without any stays NaN).
+    packed = np.sort(matrix, axis=1)
+    n_valid = np.sum(np.isfinite(packed), axis=1)
+    episode_rows = packed[draws.index]  # (n_boot, n_episodes, n_rep)
+    valid = np.maximum(n_valid[draws.index], 1)[:, :, None]
+    picks = np.floor(rng.uniform(size=(n_boot, n_episodes, n_rep)) * valid).astype(np.int64)
     values = np.take_along_axis(episode_rows, picks, axis=2)
-    with np.errstate(invalid="ignore"):
+    counts = np.minimum(n_valid[draws.index], n_rep)[:, :, None]
+    keep = np.arange(n_rep)[None, None, :] < counts
+    values = np.where(keep, values, np.nan)
+    with np.errstate(invalid="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
         per_episode = np.nanmean(values, axis=2)
         return np.asarray(np.nanmean(per_episode, axis=1), dtype=np.float64)
 
