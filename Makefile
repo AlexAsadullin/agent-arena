@@ -1,4 +1,4 @@
-.PHONY: setup lint format typecheck test reproduce report clean
+.PHONY: setup lint format typecheck test integration reproduce report clean
 
 UV ?= uv
 SEASON ?= config/seasons/synthetic.yaml
@@ -20,6 +20,12 @@ typecheck:
 
 test:
 	$(UV) run pytest --cov=agent_arena --cov-report=term
+
+# Opt-in: a small season through the real I9 gateway, started from ../risk-gated-mcp-gateway with its own fakes.
+# Uses ARENA_GATEWAY__ADMIN_KEY when set, otherwise a random key for this run; scratch data goes to tmp/.
+integration:
+	ARENA_GATEWAY__ADMIN_KEY=$${ARENA_GATEWAY__ADMIN_KEY:-$$(python3 -c 'import secrets; print(secrets.token_hex(16))')} \
+		$(UV) run pytest -m integration -s tests/integration/test_real_i9.py
 
 # Offline end-to-end demo: scripted agents + baselines against the in-process fake I9 gateway.
 reproduce:

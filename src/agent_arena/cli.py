@@ -36,10 +36,10 @@ def _settings() -> ArenaSettings:
     return settings
 
 
-def _gateway(choice: GatewayChoice, season: SeasonConfig, settings: ArenaSettings) -> GatewayFactory:
+def _gateway(choice: GatewayChoice, season: SeasonConfig, settings: ArenaSettings, url: str | None) -> GatewayFactory:
     if choice is GatewayChoice.fake:
         return fake_gateway_factory(season, settings.pricing, settings.gateway)
-    return http_gateway_factory(settings.gateway)
+    return http_gateway_factory(settings.gateway if url is None else settings.gateway.at(url))
 
 
 @app.command("run-season")
@@ -48,14 +48,20 @@ def run_season(
     gateway: Annotated[GatewayChoice, typer.Option(help="fake: in-process I9 fake; live: the I9 service.")] = (
         GatewayChoice.fake
     ),
+    gateway_url: Annotated[
+        str | None,
+        typer.Option(help="Base URL of a running I9 (admin API and MCP); implies --gateway live."),
+    ] = None,
 ) -> None:
     """Run every agent across episodes, seeds and prompt variants, then publish the leaderboard."""
     settings = _settings()
     config = load_season(season)
+    choice = GatewayChoice.live if gateway_url is not None else gateway
 
     async def main() -> list[str]:
         async with httpx.AsyncClient() as http:
-            outcome = await run_season_pipeline(config, settings, _gateway(gateway, config, settings), http)
+            factory = _gateway(choice, config, settings, gateway_url)
+            outcome = await run_season_pipeline(config, settings, factory, http)
         return [
             *summary_lines(outcome.leaderboard),
             f"runs: {len(outcome.runs)}; trials logged to: {outcome.trials_destination}",

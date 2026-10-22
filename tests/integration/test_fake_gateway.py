@@ -114,7 +114,7 @@ async def test_orders_budgets_and_freeze(harness: Harness) -> None:
         tools = GatewayTools(McpToolCaller(client))
         big = await tools.place_order(s.venue, sym, "buy", "market", 6000 / price, "sid", "why")
         assert isinstance(big, Refusal)
-        assert big.details["check"] == "order_notional"
+        assert big.reason == "order_notional"
         filled = await tools.place_order(s.venue, sym, "buy", "market", 4000 / price, "sid", "why")
         assert isinstance(filled, OrderResult)
         assert filled.order.status == "filled"
@@ -122,13 +122,13 @@ async def test_orders_budgets_and_freeze(harness: Harness) -> None:
         assert filled.order.fee is None
         over = await tools.place_order(s.venue, sym, "buy", "market", 3000 / price, "sid", "why")
         assert isinstance(over, Refusal)
-        assert over.details["check"] == "capital"
+        assert over.reason == "capital"
         resting = await tools.place_order(s.venue, sym, "buy", "limit", 0.1, "sid", "why", price=price * 0.5)
         assert isinstance(resting, OrderResult)
         assert resting.order.status == "accepted"
         rate = await tools.place_order(s.venue, sym, "sell", "market", 0.1, "sid", "why")
         assert isinstance(rate, Refusal)
-        assert rate.details["check"] == "order_rate"
+        assert rate.reason == "order_rate"
         cancelled = await tools.cancel_order(resting.order.order_id)
         assert isinstance(cancelled, OrderResult)
         assert cancelled.order.status == "cancelled"
@@ -150,7 +150,7 @@ async def test_orders_budgets_and_freeze(harness: Harness) -> None:
         breach = await tools.report_usage(100_000, 10_000, 100.0, "scripted/trend-chaser")
         assert isinstance(breach, Refusal)
         assert breach.frozen
-        assert breach.details["kind"] == "token_cost"
+        assert breach.reason == "token_cost"
         frozen_data = await tools.market_data(s.venue, sym, s.channel, iso(s.start), iso(s.step_time(0, 0)))
         assert isinstance(frozen_data, Refusal)
         assert frozen_data.code == "session_frozen"
@@ -178,7 +178,7 @@ async def test_usage_latency_and_unknown_model(harness: Harness) -> None:
         assert ack.cost_usd == pytest.approx((1000 * 4 + 100 * 20) / 1e6)
         slow = await tools.report_usage(1, 1, 5000.0, "claude-opus-5-5")
         assert isinstance(slow, Refusal)
-        assert slow.details["kind"] == "latency"
+        assert slow.reason == "latency"
 
 
 async def test_drawdown_freezes_on_clock_advance(harness: Harness) -> None:

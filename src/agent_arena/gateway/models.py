@@ -36,6 +36,21 @@ class Refusal(_Wire):
     def frozen(self) -> bool:
         return self.session_status == "frozen"
 
+    @property
+    def reason(self) -> str:
+        """Most specific cause: the first breached budget, else the first failed pre-trade check, else the code.
+
+        I9 puts budget breaches in ``details.breaches`` (``{kind, value, limit, message}``) and pre-trade
+        results in ``details.checks`` (``{name, passed, value, threshold}``).
+        """
+        for breach in self.details.get("breaches") or []:
+            if isinstance(breach, dict) and breach.get("kind"):
+                return str(breach["kind"])
+        for check in self.details.get("checks") or []:
+            if isinstance(check, dict) and check.get("passed") is False and check.get("name"):
+                return str(check["name"])
+        return self.code
+
 
 class SessionBudgets(BaseModel):
     """Budget overrides sent at session creation (I9 ``BudgetOverrides``; unset fields use I9 defaults).

@@ -1,0 +1,60 @@
+# Small season for the real I9 gateway running offline with its own fakes (make integration).
+# It must match I9's fake world: venue binance, whitelisted perps, one trade row per 60-s bar, and a session
+# clock before I9's offline wall clock (2025-06-15T12:00:00Z). The `market` block is only used by the
+# arena's own fake and mirrors I9's base prices.
+season_id: i9-offline
+description: Two agents through the real I9 gateway with I9's offline fakes (synthetic, not market evidence).
+venue: binance
+symbols: [BTC-USDT-PERP, ETH-USDT-PERP]
+channel: trades
+bar_seconds: 60
+start: "2025-06-01T00:00:00Z"
+steps_per_episode: 30
+lookback_bars: 12
+episode_gap_bars: 0
+episodes: 2
+seeds: [0]
+prompt_variants: [neutral]
+capital: 10000
+max_weight: 1.0
+periods_per_year: 525600
+features: [ret_1h]
+forecast_model: naive-drift
+forecast_horizon: 1
+
+budgets:
+  capital: 15000
+  max_drawdown: 0.25
+  max_order_notional: 12000
+  # I9 counts the order-rate window on its own wall clock, not on the session clock that the arena replays,
+  # so a 60-s window would hold every order of an episode. The limit is lifted here until I9 changes this.
+  max_orders_per_window: 100000
+  order_window_s: 60
+  max_token_cost_usd: 5.0
+  max_latency_ms: 20000
+
+market:
+  seed: 7
+  trades_per_bar: 1
+  fee_bps: 5.0
+  initial_prices: {BTC-USDT-PERP: 60000.0, ETH-USDT-PERP: 3000.0}
+  regimes:
+    - {name: flat, drift: 0.0, vol: 0.001, phi: 0.0}
+
+agents:
+  - kind: llm
+    id: llm-trend-chaser
+    provider: scripted
+    model: scripted/trend-chaser
+    behaviour: trend_chaser
+    params:
+      lookback: 6
+      gain: 0.6
+      noise: 0.25
+      chars_per_token: 4
+      base_latency_ms: 2500
+      ms_per_output_token: 15
+      latency_jitter_ms: 800
+      rationale_words: 30
+      keyword_scales: {aggressive: 1.6, "capital preservation": 0.5}
+  - {kind: baseline, id: ts-momentum, strategy: ts_momentum, params: {weight: 0.5, lookback: 6}}

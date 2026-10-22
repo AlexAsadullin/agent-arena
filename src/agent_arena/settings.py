@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, BaseModel, Field, SecretStr
 from pydantic_settings import (
@@ -29,6 +30,12 @@ class ServiceSettings(BaseModel):
 
 class GatewaySettings(BaseModel):
     """Connection to the I9 MCP gateway (contract 6.6)."""
+
+    def at(self, base_url: str) -> GatewaySettings:
+        """The same settings pointed at another gateway: admin API at ``base_url``, MCP at the same path."""
+        path = urlsplit(self.mcp_url).path or "/"
+        base = base_url.rstrip("/")
+        return self.model_copy(update={"admin_url": base, "mcp_url": base + path})
 
     mcp_url: str
     admin_url: str

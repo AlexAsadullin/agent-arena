@@ -212,7 +212,7 @@ class ArenaRunner:
                 decision.usage.model,
             )
             if isinstance(ack, Refusal) and ack.frozen:
-                frozen_reason = str(ack.details.get("kind", ack.code))
+                frozen_reason = ack.reason
 
         execution = _Execution(traded_notional=Decimal(0))
         if frozen_reason is None and decision.status == "ok":
@@ -343,7 +343,7 @@ class ArenaRunner:
             result.n_orders += 1
             if isinstance(order, Refusal):
                 result.n_rejected += 1
-                result.reasons.append(str(order.details.get("check", order.code)))
+                result.reasons.append(order.reason)
                 if order.frozen:
                     result.frozen_reason = order.code
                     break

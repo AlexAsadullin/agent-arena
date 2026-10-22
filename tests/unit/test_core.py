@@ -149,3 +149,14 @@ def test_i2_rows_and_wide_features() -> None:
     assert got == {("A", "ret_1h"): 0.2, ("B", "ret_1h"): None}
     long = Features(rows=[{"symbol": "A", "name": "x", "value": 1.5}])
     assert [(f.name, f.value) for f in long.values([])] == [("x", 1.5)]
+
+
+def test_refusal_reason_follows_i9_details() -> None:
+    breach = Refusal(code="budget_breached", details={"breaches": [{"kind": "order_rate", "value": 5, "limit": 4}]})
+    assert breach.reason == "order_rate"
+    pre = Refusal(
+        code="pre_trade_rejected",
+        details={"checks": [{"name": "a", "passed": True}, {"name": "price_band", "passed": False}]},
+    )
+    assert pre.reason == "price_band"
+    assert Refusal(code="time_travel", details={"breaches": "x"}).reason == "time_travel"

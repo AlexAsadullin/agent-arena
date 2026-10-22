@@ -433,12 +433,21 @@ class FakeGateway:
 
             def reject(code: str, message: str, check: str) -> CallToolResult:
                 self._audit(session, "place_order", "refuse", {"symbol": symbol, "check": check})
-                return refused(code, message, session.status, {"check": check})
+                if code == "budget_breached":
+                    details: dict[str, Any] = {
+                        "breaches": [{"kind": check, "message": message}],
+                        "freezes_session": False,
+                    }
+                elif code == "pre_trade_rejected":
+                    details = {"checks": [{"name": check, "passed": False}]}
+                else:
+                    details = {}
+                return refused(code, message, session.status, details)
 
             if session.mode == "research":
                 return reject("mode_forbidden", "research sessions cannot trade", "mode")
             if venue != season.venue or symbol not in season.symbols:
-                return reject("pre_trade_rejected", f"{venue}/{symbol} is not whitelisted", "whitelist")
+                return reject("pre_trade_rejected", f"{venue}/{symbol} is not whitelisted", "instrument_whitelist")
             if side not in ("buy", "sell") or type not in ("market", "limit") or not qty > 0:
                 return reject("invalid_request", "bad side, type or qty", "request")
             if type == "limit" and price is None:
@@ -539,7 +548,12 @@ class FakeGateway:
             for kind, hit in breaches:
                 if hit:
                     self._freeze(session, kind, {"model": model})
-                    return refused("budget_breached", f"{kind} budget breached", session.status, {"kind": kind})
+                    details = {
+                        "breaches": [{"kind": kind, "message": f"{kind} budget breached"}],
+                        "freezes_session": True,
+                        "freeze_budget": kind,
+                    }
+                    return refused("budget_breached", f"{kind} budget breached", session.status, details)
             return ok(
                 {"model": model, "cost_usd": cost, "usage": self._usage(session), "remaining": self._remaining(session)}
             )
