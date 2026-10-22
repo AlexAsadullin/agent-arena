@@ -98,3 +98,30 @@ diagnostics:
   flat_epsilon: 0.01
   # A step "trades" when total absolute weight change exceeds this.
   trade_epsilon: 0.01
+
+experiments:
+  # Report experiments (make report). Synthetic agents with known skill; all values are per decision step
+  # unless stated. Annualised Sharpe = per-step Sharpe * sqrt(periods_per_year).
+  reports_subdir: reports
+  seed: 20261022
+  replications: 300
+  bootstrap_samples: 400
+  periods_per_year: 8760
+  steps_per_run: 72
+  episodes: 6
+  seeds: 3
+  variants: 3
+  # True annualised Sharpe of each synthetic agent; the first one is the best.
+  skill_sharpes: [12.0, 6.0, 0.0, -6.0, -12.0]
+  # Market-factor loadings per agent: rankings shift with the regime, as Alpha Arena commentators observed.
+  factor_betas: [0.2, 1.0, -0.5, 0.6, -1.0]
+  # Std of the per-episode market factor and of the persistent seed/prompt offset, in units of step noise.
+  factor_vol: 0.6
+  replicate_offset_vol: 0.03
+  win_probability_threshold: 0.95
+  # Designs (episodes, seeds, variants) for the sample-size experiment.
+  designs: [[1, 1, 1], [3, 1, 1], [6, 1, 1], [6, 3, 1], [6, 1, 3], [6, 3, 3], [12, 3, 3], [6, 5, 5]]
+  # Token-volume multipliers (1 = the scripted single-call prompt, about 1.5k tokens per decision;
+  # 30 = a multi-agent debate of about 45k tokens per decision) and latency slippage rates (bps per second).
+  token_multipliers: [1.0, 30.0, 300.0]
+  latency_rates_bps_per_s: [0.0, 2.0, 10.0]

@@ -109,6 +109,28 @@ class DiagnosticsSettings(BaseModel):
     trade_epsilon: float = Field(ge=0)
 
 
+class ExperimentSettings(BaseModel):
+    """Parameters of the report experiments (``make report``); see docs/report.md."""
+
+    reports_subdir: str
+    seed: int
+    replications: int = Field(ge=10)
+    bootstrap_samples: int = Field(ge=100)
+    periods_per_year: float = Field(gt=0)
+    steps_per_run: int = Field(ge=3)
+    episodes: int = Field(ge=1)
+    seeds: int = Field(ge=1)
+    variants: int = Field(ge=1)
+    skill_sharpes: list[float] = Field(min_length=2)
+    factor_betas: list[float] = Field(min_length=2)
+    factor_vol: float = Field(ge=0)
+    replicate_offset_vol: float = Field(ge=0)
+    win_probability_threshold: float = Field(gt=0.5, lt=1)
+    designs: list[tuple[int, int, int]] = Field(min_length=1)
+    token_multipliers: list[float] = Field(min_length=1)
+    latency_rates_bps_per_s: list[float] = Field(min_length=1)
+
+
 class ArenaSettings(BaseSettings):
     """All Agent Arena configuration."""
 
@@ -135,6 +157,7 @@ class ArenaSettings(BaseSettings):
     latency: LatencySettings
     stats: StatsSettings
     diagnostics: DiagnosticsSettings
+    experiments: ExperimentSettings
 
     @property
     def arena_dir(self) -> Path:
