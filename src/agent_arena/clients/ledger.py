@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agent_arena.results import RunResult
 from agent_arena.settings import LedgerSettings
-from agent_arena.timeutil import iso, utcnow
+from agent_arena.timeutil import utcnow
 
 log = structlog.get_logger(__name__)
 
@@ -146,11 +146,3 @@ class LedgerClient:
         except ValueError:
             log.warning("verdict_malformed", strategy_id=strategy_id)
             return None
-
-
-def season_family(season_id: str) -> str:
-    return f"agent-arena/{season_id}"
-
-
-def utc_stamp() -> str:
-    return iso(utcnow())

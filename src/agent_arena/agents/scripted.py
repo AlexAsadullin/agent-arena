@@ -60,7 +60,8 @@ class ScriptedProvider:
             raise ProviderError("scripted double: prompt has no <observation> block")
         obs = json.loads(match.group(1))
         scale = self._prompt_scale(system + "\n" + user)
-        text, refused_text = self._respond(obs, scale, self._rng)
+        # Refusals are signalled in text only, as many real models do; the agent's parser must spot them.
+        text = self._respond(obs, scale, self._rng)
         chars_per_token = float(self._p("chars_per_token"))
         tokens_in = math.ceil((len(system) + len(user)) / chars_per_token)
         tokens_out = math.ceil(len(text) / chars_per_token)
@@ -69,7 +70,6 @@ class ScriptedProvider:
             + float(self._p("ms_per_output_token")) * tokens_out
             + abs(float(self._rng.normal(0.0, float(self._p("latency_jitter_ms")))))
         )
-        del refused_text  # refusals are signalled in text only, as many real models do
         return Completion(
             text=text,
             model=self.model,
@@ -86,7 +86,7 @@ class ScriptedProvider:
                 scale *= float(factor)
         return scale
 
-    def _respond(self, obs: dict[str, Any], scale: float, rng: np.random.Generator) -> tuple[str, bool]:
+    def _respond(self, obs: dict[str, Any], scale: float, rng: np.random.Generator) -> str:
         if self.behaviour == "trend_chaser":
             targets = self._trend(obs, scale, rng)
         elif self.behaviour == "cautious_contrarian":
@@ -94,15 +94,15 @@ class ScriptedProvider:
         elif self.behaviour == "martingale_gambler":
             roll = float(rng.uniform())
             if roll < float(self._p("refusal_rate")):
-                return str(self._p("refusal_text")), True
+                return str(self._p("refusal_text"))
             if roll < float(self._p("refusal_rate")) + float(self._p("error_rate")):
-                return "I think the market looks bullish, buy everything!", False
+                return "I think the market looks bullish, buy everything!"
             targets = self._martingale(obs, scale)
         else:
             raise ProviderError(f"unknown scripted behaviour {self.behaviour}")
         words = int(self._p("rationale_words"))
         rationale = " ".join(["because"] * words)
-        return json.dumps({"targets": targets, "rationale": rationale}), False
+        return json.dumps({"targets": targets, "rationale": rationale})
 
     @staticmethod
     def _log_ret(closes: list[float], lookback: int) -> float:
