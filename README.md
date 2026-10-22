@@ -17,6 +17,7 @@ make setup                    # uv venv --python 3.13 .venv && uv sync --frozen
 make lint typecheck test      # offline, about 30 s
 make reproduce                # synthetic season against the in-process fake gateway, about 1 min
 make report                   # experiments behind docs/report.md, about 10 s
+make integration              # opt-in: a small season through the real I9 gateway, about 15 s
 ```
 
 `make reproduce` runs 3 scripted LLM doubles and 4 baselines over 6 episodes x 3 seeds x 3 prompt variants
@@ -24,8 +25,23 @@ make report                   # experiments behind docs/report.md, about 10 s
 `leaderboard.html`, `leaderboard.json`, `runs.jsonl`, `steps.parquet`, `meta.json`). Trials go to the S6
 ledger, or to its offline inbox `$TRADEQ_DATA_DIR/research-ledger/inbox/s8-<yyyymmdd>.jsonl`.
 
-CLI: `arena run-season --season <yaml> [--gateway fake|live]`, `arena leaderboard --season <yaml>` (recompute
-from stored runs), `arena report --season <yaml>` (re-render Markdown and HTML).
+CLI: `arena run-season --season <yaml> [--gateway fake|live] [--gateway-url http://host:port]`,
+`arena leaderboard --season <yaml>` (recompute from stored runs), `arena report --season <yaml>` (re-render
+Markdown and HTML). `--gateway-url` points the admin API and MCP at a running I9 and implies `--gateway live`.
+
+### Running against the real I9
+
+`make integration` runs `tests/integration/test_real_i9.py` (marker `integration`, skipped by `make test`). It
+starts I9 from `../risk-gated-mcp-gateway/.venv` (override with `ARENA_I9_REPO`) as a subprocess on a free
+loopback port, through `tests/integration/i9/serve_offline.py`, which wires I9's own in-process fakes of its
+downstream services into its HTTP app, because `gateway serve` has no offline switch. I9 gets a scratch
+`TRADEQ_DATA_DIR` under the gitignored `tmp/` and the admin key `ARENA_GATEWAY__ADMIN_KEY` (random per run if
+unset). The season is `config/seasons/i9-offline.yaml`: 2 agents, 2 episodes, 1 seed, 30 one-minute steps.
+
+Against a running I9 started the same way, run
+`ARENA_GATEWAY__ADMIN_KEY=<key> ARENA_ACCOUNTING__FILL_PRICE_SOURCE=reference arena run-season --season
+config/seasons/i9-offline.yaml --gateway-url http://127.0.0.1:<port>`. The `reference` fill-price source is
+needed because I9's offline exchange fake fills at its wall clock, not at the session clock.
 
 ## Configuration
 
@@ -40,6 +56,7 @@ budgets, agents) are YAML files in `config/seasons/`; prompt templates are in `c
 | `ARENA_GATEWAY__MCP_URL`, `ARENA_GATEWAY__ADMIN_URL` | I9 endpoints (default port 8608) |
 | `ARENA_PROVIDERS__ANTHROPIC__API_KEY`, `ARENA_PROVIDERS__OPENAI_COMPAT__API_KEY` | keys for real LLM agents |
 | `ARENA_LEDGER__BASE_URL`, `ARENA_LEAKAGE__BASE_URL` | S6 and S7 services |
+| `ARENA_ACCOUNTING__FILL_PRICE_SOURCE` | `order` (default: the order's fill price) or `reference` (I9's I2 reference price at the session clock) |
 
 Model ids are set per agent in the season file; prices (USD per million tokens) are in `pricing`, and a model
 without a price cannot enter a season. Latency slippage is `latency.slippage_bps_per_second` (default 2).
@@ -101,8 +118,9 @@ Synthetic data only (see `docs/report.md`, which `make report` regenerates); 95%
 ## Limitations and roadmap
 
 All evidence is synthetic; no real LLM and no real market data have been run yet. The latency slippage rate
-is an assumption until it is calibrated on I6 fills. The live gateway path is covered by unit tests with
-mocked HTTP and one test behind `-m live`, but it has not yet run a full season against a running I9.
+is an assumption until it is calibrated on I6 fills. The real I9 has run a small season (`make integration`)
+with its offline fakes only; two I9 behaviours limit replayed seasons there: the order-rate budget counts on
+I9's wall clock (the I9 season lifts that limit), and the offline exchange fake fills at I9's wall clock.
 
 Roadmap: a calibrated latency model from I6 fills; a season with real models through the Anthropic and
 OpenAI-compatible adapters; minimum-detectable-effect planning per season from the measured variance

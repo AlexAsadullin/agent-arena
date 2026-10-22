@@ -1,7 +1,6 @@
 # HANDOVER: agent-arena (Tradeq S8)
 
-Last updated 2026-10-23 by the orchestrating session. It was written from the finishing agent's final report and
-from the repository.
+Last updated 2026-10-23 by the S8 agent, after the first season through the real I9 gateway.
 
 ## Goal
 
@@ -53,6 +52,9 @@ in-process fake of I9 that tests and the demo use.
 3. docs/report.md is committed, and the orchestrator checked it against the writing rules.
 4. Headline results (synthetic): a single run per agent named the wrong winner in 51.7% of 300 seasons (95% CI 46.0% to 57.3%), while the arena protocol did so in 0.0% (CI 0.0% to 1.3%). Among agents with no skill, 8.2% of configurations passed PSR of at least 0.95, against 0.0% for DSR. A design of 12 episodes, 3 seeds and 3 variants made 92.7% correct calls, against 72.7% for 6 episodes. Latency slippage, not token cost, moved the martingale double from 4th place to last.
 5. The fake gateway matches the finished I9: bearer auth with the session api_key or the admin key plus `X-Gateway-Session`, the I9 budget names, and refusal bodies with `isError`. Arena sessions are paper sessions, because I9 forbids trading in research mode.
+6. The real I9 runs a small season: `make integration` (marker `integration`, skipped by `make test`) starts I9 from `../risk-gated-mcp-gateway/.venv` on a free loopback port through `tests/integration/i9/serve_offline.py`, with I9's own fakes, a scratch TRADEQ_DATA_DIR under the gitignored `tmp/`, and the admin key from `ARENA_GATEWAY__ADMIN_KEY` (random if unset). Season `config/seasons/i9-offline.yaml`: 2 agents, 2 episodes, 1 seed, 30 one-minute steps. Last result: 4 runs, 226 orders filled, rejects only `capital` and `order_notional`, no frozen run; ts-momentum ranked above the trend chaser, which paid 199.4 bps of intelligence cost per run. The run takes about 12 s.
+7. `arena run-season --gateway-url http://host:port` points the client at a running I9. Against I9's offline fakes also set `ARENA_ACCOUNTING__FILL_PRICE_SOURCE=reference`.
+8. Fixes from the real I9 (commits 87134b4 and the integration commit): I2-shaped trade rows (`valid_time`, int ns or ISO), wide feature rows, the order's `price` used as the fill price (no `avg_price` or `fee` in I9 orders), refusal causes read from `details.breaches[].kind` and `details.checks[]` (`Refusal.reason`), httpx2 request logs silenced. The fake gateway now returns the same shapes.
 
 ## Mistakes and lessons
 
@@ -60,4 +62,7 @@ in-process fake of I9 that tests and the demo use.
 2. uv first resolved newer cffi, idna and pycparser than `constraints.txt` lists. Pin transitive dependencies through `[tool.uv] constraint-dependencies`.
 3. The fake gateway first ran tools in worker threads, which made runs slow and nondeterministic. They now run inline (commit 753d2e3).
 4. `make reproduce` and `make report` write synthetic demo trials into the shared S6 inbox in the real data root. Set `ARENA_LEDGER__OFFLINE_INBOX=false` to stop this when it is not wanted.
-5. The latency slippage rate (2 bps per second, capped at 50 bps) is an assumption until it is calibrated on I6 fills. No run has used the real I9 or a real LLM yet.
+5. The latency slippage rate (2 bps per second, capped at 50 bps) is an assumption until it is calibrated on I6 fills. No run has used a real LLM yet.
+6. The fake was aligned with the I9 README, not with I9 output, so three shapes were still wrong until the first real run: trade rows carry `valid_time` instead of `ts_exchange`, features come in wide rows, and refusal causes sit in `details.breaches` and `details.checks`. Validate the fake against a real run (make integration) after every I9 change, not against documentation.
+7. Open I9 issues, reported to the orchestrator and not fixed here: the order-rate budget window uses I9's wall clock, so in a replayed session every order of an episode falls into one window (the I9 season lifts `max_orders_per_window`); I9's offline I6 fake fills at its wall clock (2025-06-15T12:00Z), not at the session clock; `gateway serve` has no `--offline` switch, hence the launcher script; the I9 price for claude-opus-5-5 (15/75 USD per million tokens) differs from the arena table (4/20), so the two token budgets disagree.
+8. The shared scratchpad directory is shared with other agents, and one of them overwrote a profiling script. Keep scratch files under this repo's `tmp/`.

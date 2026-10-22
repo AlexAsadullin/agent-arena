@@ -8,7 +8,7 @@ import sys
 import structlog
 
 # Third-party loggers that log every request at INFO; the arena issues tens of thousands per season.
-_NOISY = ("httpx", "httpcore", "mcp", "uvicorn", "fastapi")
+_NOISY = ("httpx", "httpcore", "httpx2", "httpcore2", "mcp", "uvicorn", "fastapi")
 
 
 def configure_logging(level: str) -> None:
