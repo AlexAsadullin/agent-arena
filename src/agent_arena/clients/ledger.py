@@ -132,6 +132,8 @@ class LedgerClient:
         return str(path)
 
     async def verdict(self, strategy_id: str) -> Verdict | None:
+        if "/" in strategy_id:
+            raise ValueError(f"strategy id {strategy_id!r} contains '/', which the S6 verdict route cannot match")
         try:
             resp = await self._http.get(
                 f"{self.settings.base_url}/v1/strategies/{strategy_id}/verdict",

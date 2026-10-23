@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 
 from agent_arena.clients.leakage import LeakageClient
@@ -50,7 +51,7 @@ def a_run() -> RunResult:
 
 @respx.mock
 async def test_ledger_posts_batch_and_falls_back_to_inbox(settings: ArenaSettings, tmp_path: Path) -> None:
-    trial = trial_from_run(a_run(), "agent-arena/s/a", "agent-arena/s", "s8", 8760, {"net_sharpe": 1.0}, ["t"], None)
+    trial = trial_from_run(a_run(), "agent-arena:s:a", "agent-arena/s", "s8", 8760, {"net_sharpe": 1.0}, ["t"], None)
     route = respx.post(f"{settings.ledger.base_url}/v1/trials/batch").mock(
         side_effect=[
             httpx.Response(200, json=[{"trial_id": trial.trial_id}]),
@@ -87,6 +88,8 @@ async def test_ledger_verdict(settings: ArenaSettings, tmp_path: Path) -> None:
         assert verdict.dsr == 0.9
         for sid in ("bad", "missing", "down"):
             assert await client.verdict(sid) is None
+        with pytest.raises(ValueError, match="'/'"):
+            await client.verdict("agent-arena/s/a")
 
 
 @respx.mock

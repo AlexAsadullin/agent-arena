@@ -160,3 +160,11 @@ def test_refusal_reason_follows_i9_details() -> None:
     )
     assert pre.reason == "price_band"
     assert Refusal(code="time_travel", details={"breaches": "x"}).reason == "time_travel"
+
+
+def test_strategy_ids_never_contain_a_slash() -> None:
+    from agent_arena.runner import strategy_id
+
+    assert strategy_id("s1", "ts-momentum") == "agent-arena:s1:ts-momentum"
+    with pytest.raises(ValueError, match="'/'"):
+        strategy_id("s/1", "a")

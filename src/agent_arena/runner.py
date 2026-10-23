@@ -48,9 +48,19 @@ class RunSpec:
     seed: int
 
 
+STRATEGY_ID_SEPARATOR = ":"
+
+
 def strategy_id(season_id: str, agent_id: str) -> str:
-    """Strategy id used for orders and S6 trials: one strategy per arena agent."""
-    return f"agent-arena/{season_id}/{agent_id}"
+    """Strategy id used for orders and S6 trials: one strategy per arena agent, e.g. ``agent-arena:s1:ts-momentum``.
+
+    It never contains a slash, because S6 serves verdicts at ``/v1/strategies/{strategy_id}/verdict`` and a slash
+    would split the path (I9 joins its own ids with ``:`` for the same reason).
+    """
+    parts = ("agent-arena", season_id, agent_id)
+    if any("/" in p for p in parts):
+        raise ValueError(f"season and agent ids must not contain '/': {parts}")
+    return STRATEGY_ID_SEPARATOR.join(parts)
 
 
 def bar_closes(rows: list[TradeRow], end: datetime, n_bars: int, bar_ns: int) -> list[float]:

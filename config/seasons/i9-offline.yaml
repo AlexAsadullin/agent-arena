@@ -26,9 +26,8 @@ budgets:
   capital: 15000
   max_drawdown: 0.25
   max_order_notional: 12000
-  # I9 counts the order-rate window on its own wall clock, not on the session clock that the arena replays,
-  # so a 60-s window would hold every order of an episode. The limit is lifted here until I9 changes this.
-  max_orders_per_window: 100000
+  # I9 counts this window on the session clock; one step is one 60-s bar with at most one order per symbol.
+  max_orders_per_window: 4
   order_window_s: 60
   max_token_cost_usd: 5.0
   max_latency_ms: 20000

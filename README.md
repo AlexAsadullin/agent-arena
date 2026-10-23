@@ -32,16 +32,19 @@ Markdown and HTML). `--gateway-url` points the admin API and MCP at a running I9
 ### Running against the real I9
 
 `make integration` runs `tests/integration/test_real_i9.py` (marker `integration`, skipped by `make test`). It
-starts I9 from `../risk-gated-mcp-gateway/.venv` (override with `ARENA_I9_REPO`) as a subprocess on a free
-loopback port, through `tests/integration/i9/serve_offline.py`, which wires I9's own in-process fakes of its
-downstream services into its HTTP app, because `gateway serve` has no offline switch. I9 gets a scratch
+starts `../risk-gated-mcp-gateway/.venv/bin/gateway serve --offline` (override the checkout with
+`ARENA_I9_REPO`) as a subprocess on a free loopback port, so I9 runs with its own in-process fakes of its
+downstream services. I9 gets a scratch
 `TRADEQ_DATA_DIR` under the gitignored `tmp/` and the admin key `ARENA_GATEWAY__ADMIN_KEY` (random per run if
 unset). The season is `config/seasons/i9-offline.yaml`: 2 agents, 2 episodes, 1 seed, 30 one-minute steps.
 
-Against a running I9 started the same way, run
-`ARENA_GATEWAY__ADMIN_KEY=<key> ARENA_ACCOUNTING__FILL_PRICE_SOURCE=reference arena run-season --season
-config/seasons/i9-offline.yaml --gateway-url http://127.0.0.1:<port>`. The `reference` fill-price source is
-needed because I9's offline exchange fake fills at its wall clock, not at the session clock.
+Against an I9 started with `make -C ../risk-gated-mcp-gateway serve-offline`, run
+`ARENA_GATEWAY__ADMIN_KEY=<key> arena run-season --season config/seasons/i9-offline.yaml --gateway-url
+http://127.0.0.1:8608`. The test also checks that every fill price equals I9's reference price at the session
+clock, and that the only rejects are exposure and order-notional limit hits. Last run: 4 runs, 226 orders
+filled, 0 of 226 fills off the reference price, ts-momentum net Sharpe -586 [-611, -561] against the trend
+chaser at -984 [-1009, -959] with 199.4 bps of intelligence cost per run (one-minute bars, annualised over
+525,600 periods; a smoke test, not evidence).
 
 ## Configuration
 
@@ -119,8 +122,8 @@ Synthetic data only (see `docs/report.md`, which `make report` regenerates); 95%
 
 All evidence is synthetic; no real LLM and no real market data have been run yet. The latency slippage rate
 is an assumption until it is calibrated on I6 fills. The real I9 has run a small season (`make integration`)
-with its offline fakes only; two I9 behaviours limit replayed seasons there: the order-rate budget counts on
-I9's wall clock (the I9 season lifts that limit), and the offline exchange fake fills at I9's wall clock.
+with its offline fakes only, not with real I2 or I6 services. I9 prices the scripted test doubles with its
+default row, so its token budget for them differs from the arena's cost table; the Claude rates agree.
 
 Roadmap: a calibrated latency model from I6 fills; a season with real models through the Anthropic and
 OpenAI-compatible adapters; minimum-detectable-effect planning per season from the measured variance

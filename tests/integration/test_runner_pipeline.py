@@ -110,6 +110,8 @@ async def test_pipeline_writes_artefacts_and_inbox(
         assert len(lines) == len(outcome.runs)
         trial = json.loads(lines[0])
         assert trial["source"] == "s8"
+        assert "/" not in trial["strategy_id"]
+        assert trial["strategy_id"].startswith(f"agent-arena:{season.season_id}:")
         assert trial["schema_version"] == "1"
         assert len(trial["returns"]["values"]) == season.steps_per_episode
         for name in (
