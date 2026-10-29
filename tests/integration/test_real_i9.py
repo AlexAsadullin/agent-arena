@@ -30,6 +30,7 @@ from agent_arena.settings import ArenaSettings
 pytestmark = pytest.mark.integration
 
 ROOT = Path(__file__).resolve().parents[2]
+MAX_TICKS_FROM_REFERENCE = 5
 SEASON = ROOT / "config" / "seasons" / "i9-offline.yaml"
 STARTUP_TIMEOUT_S = 60.0
 POLL_S = 0.25
@@ -114,13 +115,15 @@ async def test_small_season_through_real_i9(i9: tuple[str, str, Path], monkeypat
     rejects = sorted({x for r in outcome.runs for s in r.steps for x in s.reject_reasons})
     # Only limit hits that the agents caused; no order-rate refusals from a mis-clocked window.
     assert set(rejects) <= {"capital", "order_notional"}, rejects
-    # I9 forwards the session clock to its I6 fake, so each fill price equals I9's reference price at that clock.
+    # I9's default paper broker is its mirror sandbox, which walks the fake I2 book at the session clock: each fill
+    # sits within a few ticks of I9's reference price at that clock (the book is one tick wide, levels are deep).
     audit = [
         json.loads(line) for f in (scratch / "i9-data").rglob("audit*.jsonl") for line in f.read_text().splitlines()
     ]
     fills = [e["outcome"] for e in audit if e.get("action") == "place_order" and e.get("decision") == "allowed"]
     assert len(fills) == filled
-    assert all(f["order"]["price"] == pytest.approx(f["reference_price"]) for f in fills)
+    assert all(f["routed_to"] == "mirror" for f in fills)
+    assert all(abs(f["order"]["avg_price"] - f["reference_price"]) <= MAX_TICKS_FROM_REFERENCE * 0.01 for f in fills)
     llm = [r for r in outcome.runs if r.is_llm]
     assert all(sum(s.token_cost for s in r.steps) > 0 for r in llm)
     assert {row.agent_id for row in outcome.leaderboard.rows} == {a.id for a in season.agents}

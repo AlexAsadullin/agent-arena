@@ -1,11 +1,12 @@
 # Small season for the real I9 gateway running offline with its own fakes (make integration).
-# It must match I9's fake world: venue binance, whitelisted perps, one trade row per 60-s bar, and a session
+# It must match I9's fake world: venue moex-tbank, whitelisted TQBR stocks with their lots, one trade row per 60-s
+# bar, an order book from the fake I2 that I9's mirror sandbox matches against (I9's default paper broker), and a session
 # clock before I9's offline wall clock (2025-06-15T12:00:00Z). The `market` block is only used by the
 # arena's own fake and mirrors I9's base prices.
 season_id: i9-offline
 description: Two agents through the real I9 gateway with I9's offline fakes (synthetic, not market evidence).
-venue: binance
-symbols: [BTC-USDT-PERP, ETH-USDT-PERP]
+venue: moex-tbank
+symbols: [SBER-RUB-TQBR, GAZP-RUB-TQBR]
 channel: trades
 bar_seconds: 60
 start: "2025-06-01T00:00:00Z"
@@ -15,17 +16,18 @@ episode_gap_bars: 0
 episodes: 2
 seeds: [0]
 prompt_variants: [neutral]
-capital: 10000
+capital: 1000000
 max_weight: 1.0
+lot_sizes: {SBER-RUB-TQBR: 1, GAZP-RUB-TQBR: 10}
 periods_per_year: 525600
 features: [ret_1h]
 forecast_model: naive-drift
 forecast_horizon: 1
 
 budgets:
-  capital: 15000
+  capital: 1500000
   max_drawdown: 0.25
-  max_order_notional: 12000
+  max_order_notional: 1000000
   # I9 counts this window on the session clock; one step is one 60-s bar with at most one order per symbol.
   max_orders_per_window: 4
   order_window_s: 60
@@ -36,7 +38,7 @@ market:
   seed: 7
   trades_per_bar: 1
   fee_bps: 5.0
-  initial_prices: {BTC-USDT-PERP: 60000.0, ETH-USDT-PERP: 3000.0}
+  initial_prices: {SBER-RUB-TQBR: 285.0, GAZP-RUB-TQBR: 130.0}
   regimes:
     - {name: flat, drift: 0.0, vol: 0.001, phi: 0.0}
 

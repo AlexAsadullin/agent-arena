@@ -97,6 +97,8 @@ class SeasonConfig(BaseModel):
     max_weight: float = Field(gt=0)
     periods_per_year: float = Field(gt=0)
     features: list[str] = Field(default_factory=list)
+    # Exchange lot per symbol in shares (MOEX); orders are rounded down to whole lots. Absent = no rounding.
+    lot_sizes: dict[str, float] = Field(default_factory=dict)
     forecast_model: str | None = None
     forecast_horizon: int = Field(default=1, ge=1)
     budgets: BudgetConfig

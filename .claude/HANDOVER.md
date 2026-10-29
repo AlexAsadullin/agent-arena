@@ -67,3 +67,21 @@ in-process fake of I9 that tests and the demo use.
 6. The fake was aligned with the I9 README, not with I9 output, so three shapes were still wrong until the first real run: trade rows carry `valid_time` instead of `ts_exchange`, features come in wide rows, and refusal causes sit in `details.breaches` and `details.checks`. Validate the fake against a real run (make integration) after every I9 change, not against documentation.
 7. Four I9 issues found by the first real run were fixed in I9 on 2026-10-23: the order-rate window now runs on the session clock, the offline I6 fake fills at the session clock, `gateway serve --offline` exists (the arena's launcher script was deleted), and the claude-opus-5-5 price is 4/20. The arena's strategy ids contained slashes until the same day, which S6's verdict route cannot match; check ids against every route that embeds them.
 8. The shared scratchpad directory is shared with other agents, and one of them overwrote a profiling script. Keep scratch files under this repo's `tmp/`.
+
+## MOEX pivot (2026-10-29)
+
+The platform is MOEX only now, and I9 routes paper sessions to its mirror sandbox (contract 6.8), which matches
+orders against the order book in I2. Changes here, made by the session that did the pivot:
+1. `config/seasons/i9-offline.yaml`: venue `moex-tbank`, symbols SBER and GAZP, rouble capital and budgets,
+   `lot_sizes` (new optional season field).
+2. `runner.py`: `round_to_lots` rounds every order toward zero to whole lots (MOEX rejects fractions; I9 refuses
+   them with `qty_whole_lots`); a `cancelled` market order that carries `filled_qty > 0` is booked as the partial
+   fill it is (the mirror cancels what the book cannot fill).
+3. `tests/integration/test_real_i9.py`: fills are now routed to `mirror` and sit within 5 ticks of I9's reference
+   price, instead of exactly at it. Last run (2026-10-30): 193 orders filled, rejects only `capital` and
+   `order_notional`, about 5 s.
+4. The arena's own fake gateway still uses its crypto symbols and routes to `i6`; it is a self-contained fake and
+   was left as is. The report (`docs/report.md`) is unchanged, because it uses the fake.
+
+Use: the arena's main role is strategy against strategy (quant baselines, RL policies, scripted agents); real LLM
+agents are optional and should run under a token budget, because every bar of every run is an LLM call.

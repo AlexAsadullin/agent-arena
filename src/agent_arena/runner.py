@@ -17,6 +17,7 @@ book is carried to the end of the episode, so a frozen run still bears the risk 
 from __future__ import annotations
 
 import asyncio
+import math
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -82,6 +83,13 @@ def bar_closes(rows: list[TradeRow], end: datetime, n_bars: int, bar_ns: int) ->
         if last is not None:
             closes.append(last)
     return closes
+
+
+def round_to_lots(delta: float, lot: float | None) -> float:
+    """Round an order quantity toward zero to whole exchange lots (MOEX trades in lots)."""
+    if not lot:
+        return delta
+    return math.copysign(math.floor(abs(delta) / lot + 1e-9) * lot, delta)
 
 
 @dataclass
@@ -337,7 +345,7 @@ class ArenaRunner:
             if bounded != target:
                 result.n_clamped += 1
             price = prices[symbol]
-            delta = bounded * equity / price - ledger.position(symbol)
+            delta = round_to_lots(bounded * equity / price - ledger.position(symbol), season.lot_sizes.get(symbol))
             if abs(delta) * price < settings.min_order_notional:
                 continue
             side = "buy" if delta > 0 else "sell"
@@ -363,8 +371,10 @@ class ArenaRunner:
                 result.n_rejected += 1
                 result.reasons.append(placed.reject_reason or "rejected")
                 continue
-            # A market order that I6 accepted is treated as filled at the reference price.
-            if placed.status not in ("filled", "partially_filled", "accepted"):
+            # A market order that I6 accepted is treated as filled at the reference price. A cancelled market
+            # order may still carry a partial fill (the mirror sandbox cancels what the book could not fill).
+            partial = placed.status == "cancelled" and (placed.filled_qty or 0.0) > 0
+            if placed.status not in ("filled", "partially_filled", "accepted") and not partial:
                 continue
             qty = placed.filled_qty if placed.filled_qty is not None else abs(delta)
             fill_price = self._fill_price(placed.avg_price, placed.price, order.reference_price, price)
