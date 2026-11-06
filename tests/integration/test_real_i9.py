@@ -22,6 +22,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
+from agent_arena.fees import FeeBook
 from agent_arena.gateway.client import http_gateway_factory
 from agent_arena.pipeline import run_season_pipeline
 from agent_arena.season import load_season
@@ -124,6 +125,18 @@ async def test_small_season_through_real_i9(i9: tuple[str, str, Path], monkeypat
     assert len(fills) == filled
     assert all(f["routed_to"] == "mirror" for f in fills)
     assert all(abs(f["order"]["avg_price"] - f["reference_price"]) <= MAX_TICKS_FROM_REFERENCE * 0.01 for f in fills)
+    # I9 reports each order's fee and the arena books exactly that once; both follow the arena's fee schedule
+    # (T-Invest basic tariff on moex-tbank), so the arena's fake gateway and the real I9 charge the same.
+    fees = FeeBook.from_settings(settings)
+    assert fees.has_schedule(season.venue)
+    for f in fills:
+        order = f["order"]
+        for piece in order["fills"]:
+            expected = fees.fee(season.venue, order["symbol"], piece["qty"], piece["price"], piece["liquidity"], 0.0)
+            assert piece["fee"] == pytest.approx(float(expected), abs=1e-9)
+        assert order["fee"] == pytest.approx(sum(p["fee"] for p in order["fills"]), abs=1e-6)
+    arena_fees = sum(s.fees for r in outcome.runs for s in r.steps)
+    assert arena_fees == pytest.approx(sum(f["order"]["fee"] for f in fills), abs=1e-6)
     llm = [r for r in outcome.runs if r.is_llm]
     assert all(sum(s.token_cost for s in r.steps) > 0 for r in llm)
     assert {row.agent_id for row in outcome.leaderboard.rows} == {a.id for a in season.agents}

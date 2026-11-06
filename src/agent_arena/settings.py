@@ -96,6 +96,32 @@ class AccountingSettings(BaseModel):
     min_order_notional: float = Field(ge=0)
 
 
+class ZeroFeeFundsSettings(BaseModel):
+    """Instruments with their own rates on a venue (T-Bank's own funds on the MOEX venues)."""
+
+    maker_fee: float = Field(ge=0)
+    taker_fee: float = Field(ge=0)
+    tickers: list[str]
+    instrument_uids: list[str]
+    # Relative to TRADEQ_DATA_DIR; an absent file is tolerated (config list only, with a warning).
+    reference_file: str | None = None
+
+
+class VenueFeeSettings(BaseModel):
+    """Fee schedule of one venue: proportional rates on trade value per fill."""
+
+    source: str
+    maker_fee: float = Field(ge=0)
+    taker_fee: float = Field(ge=0)
+    # Fee per fill is rounded half-up to a multiple of this (0.01 = the kopeck); unset = no rounding.
+    rounding: float | None = Field(default=None, gt=0)
+    zero_fee_funds: ZeroFeeFundsSettings | None = None
+
+
+class FeeSettings(BaseModel):
+    venues: dict[str, VenueFeeSettings] = Field(default_factory=dict)
+
+
 class LatencySettings(BaseModel):
     slippage_bps_per_second: float = Field(ge=0)
     max_slippage_bps: float = Field(ge=0)
@@ -162,6 +188,7 @@ class ArenaSettings(BaseSettings):
     providers: dict[str, ProviderSettings]
     pricing: dict[str, ModelPrice]
     accounting: AccountingSettings
+    fees: FeeSettings
     latency: LatencySettings
     stats: StatsSettings
     diagnostics: DiagnosticsSettings

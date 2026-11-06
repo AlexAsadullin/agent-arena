@@ -1,6 +1,6 @@
 # HANDOVER: agent-arena (Tradeq S8)
 
-Last updated 2026-10-23 by the S8 agent, after adapting to the fixed I9 gateway.
+Last updated 2026-11-05 (T-Invest fees for MOEX). Earlier sections: 2026-10-23 (fixed I9), 2026-10-29 (MOEX pivot).
 
 ## Goal
 
@@ -47,13 +47,13 @@ in-process fake of I9 that tests and the demo use.
 
 ## State at handover
 
-1. The repo is finished and green. Lint and `mypy --strict` are clean, 78 tests pass and 1 live test is deselected, and coverage is 96%. The tree is clean, with 10 commits.
+1. Lint and `mypy --strict` are clean; 88 tests pass and 2 are deselected (`live` in test_gateway_http.py and the `integration` real-I9 test), coverage 96%, 16 commits. The fee work of 2026-11-05 is not committed yet.
 2. `make reproduce` runs 234 runs in about 1 minute, and `make report` takes about 10 s. Outputs are in `$TRADEQ_DATA_DIR/agent-arena/seasons/` and `reports/`.
 3. docs/report.md is committed, and the orchestrator checked it against the writing rules.
 4. Headline results (synthetic): a single run per agent named the wrong winner in 51.7% of 300 seasons (95% CI 46.0% to 57.3%), while the arena protocol did so in 0.0% (CI 0.0% to 1.3%). Among agents with no skill, 8.2% of configurations passed PSR of at least 0.95, against 0.0% for DSR. A design of 12 episodes, 3 seeds and 3 variants made 92.7% correct calls, against 72.7% for 6 episodes. Latency slippage, not token cost, moved the martingale double from 4th place to last.
-5. The fake gateway matches the finished I9: bearer auth with the session api_key or the admin key plus `X-Gateway-Session`, the I9 budget names, and refusal bodies with `isError`. Arena sessions are paper sessions, because I9 forbids trading in research mode.
-6. The real I9 runs a small season: `make integration` (marker `integration`, skipped by `make test`) starts `../risk-gated-mcp-gateway/.venv/bin/gateway serve --offline` on a free loopback port with a scratch TRADEQ_DATA_DIR under the gitignored `tmp/` and the admin key from `ARENA_GATEWAY__ADMIN_KEY` (random if unset). Season `config/seasons/i9-offline.yaml`: 2 agents, 2 episodes, 1 seed, 30 one-minute steps, order rate 4 per 60 s on the session clock. Last result (2026-10-23): 4 runs, 226 orders filled, rejects only `capital` and `order_notional`, every fill price equal to I9's reference price, no frozen run; ts-momentum net Sharpe -586 above the trend chaser at -984, which paid 199.4 bps of intelligence cost per run. About 4 to 12 s.
-7. `arena run-season --gateway-url http://host:port` points the client at a running I9 (for example `make -C ../risk-gated-mcp-gateway serve-offline`). `accounting.fill_price_source` stays `order`, because I9 now forwards the session clock to I6 (`X-Tradeq-Known-At`).
+5. The fake gateway matches I9's auth (session api_key, or the admin key plus `X-Gateway-Session`), budget names and refusal bodies with `isError`. Since 2026-11-05 a market fill also reports `filled_qty`, `avg_price` and `fee` the way I9's mirror sandbox does. It still serves its own synthetic market and answers `routed_to: i6`; it has no order book. Arena sessions are paper sessions, because I9 forbids trading in research mode.
+6. The real I9 runs a small MOEX season: `make integration` (marker `integration`, skipped by `make test`) starts `../risk-gated-mcp-gateway/.venv/bin/gateway serve --offline` on a free loopback port with a scratch TRADEQ_DATA_DIR under the gitignored `tmp/` and the admin key from `ARENA_GATEWAY__ADMIN_KEY` (random if unset). Season `config/seasons/i9-offline.yaml`: moex-tbank SBER and GAZP in whole lots, 2 agents, 2 episodes, 1 seed, 30 one-minute steps. I9 routes the orders to its mirror sandbox. Last result (2026-11-05): 4 runs, 209 orders filled, rejects only `capital` and `order_notional`, fills within 5 ticks of the reference price, I9's per-fill fees equal to the arena's schedule, and the arena's booked fees equal to I9's; ts-momentum net Sharpe -959 above the trend chaser at -1193 (168.8 bps of intelligence cost). About 5 s.
+7. `arena run-season --gateway-url http://host:port` points the client at a running I9 (for example `make -C ../risk-gated-mcp-gateway serve-offline`). `accounting.fill_price_source` stays `order`; with the mirror the order's `avg_price` is used anyway.
 8. Fixes from the real I9: I2-shaped trade rows (`valid_time`, int ns or ISO), wide feature rows, the order's `price` used as the fill price, refusal causes from `details.breaches[].kind` and `details.checks[]` (`Refusal.reason`), httpx2 request logs silenced, and strategy ids joined with `:` (`agent-arena:<season>:<agent>`), because S6's verdict route cannot match a slash; the S6 client refuses ids with a slash. The fake gateway returns the same shapes.
 9. Price tables: the Claude rates in `config/settings.yaml` match I9's (claude-opus-5-5 4.00/20.00, claude-sonnet-5-5 2.00/10.00, claude-haiku-5-5 0.10/0.50 USD per million tokens). I9 prices the scripted doubles with its default row (4/20), so I9's token budget for them is stricter than the arena's cost.
 
@@ -85,3 +85,29 @@ orders against the order book in I2. Changes here, made by the session that did 
 
 Use: the arena's main role is strategy against strategy (quant baselines, RL policies, scripted agents); real LLM
 agents are optional and should run under a token budget, because every bar of every run is an LLM call.
+
+## T-Invest fees for MOEX (2026-11-05)
+
+User decision: local MOEX simulations charge the T-Invest basic tariff, 0.25% of trade value per fill, and 0% for
+T-Bank's own funds (T-Capital ETFs); there is no broker. I9's mirror sandbox got the same model in parallel
+(`brokers/commission.py`).
+1. `fees.py` (`FeeBook`) reads `fees.venues.<venue>` (moex-tbank, moex-algopack, moex-iss share one YAML anchor;
+   `source` cites the decision): `maker_fee`, `taker_fee`, `rounding` (0.01: each fill's fee rounded half-up to the
+   kopeck on the exact decimal `qty * price`, as I9 does), `zero_fee_funds` (tickers matching I9's list, instrument
+   uids, I1's reference file `market-tape-recorder/reference/tbank_zero_fee_funds.json`; an absent file logs
+   `zero_fee_reference_missing` and falls back to config; a malformed one raises). Symbols match by ticker (SECID).
+2. The runner books the fee that the gateway reports and charges nothing more; without a reported fee it applies
+   the schedule (taker), else `accounting.fallback_fee_bps`. The fake charges the schedule (taker for market,
+   maker for resting fills), else the season's `market.fee_bps`, now optional and removed from `i9-offline.yaml`.
+3. Tests: 88 passed (6 new: `tests/unit/test_fees.py`, a MOEX season on the fake in `test_runner_pipeline.py`);
+   the live test checks I9's per-fill fees against `FeeBook` and the arena total against I9's total.
+4. The synthetic demo season, `make report` and `docs/report.md` are unchanged (SYNTH venue, 5 bps).
+
+## MOEX demo world (2026-11-06)
+
+`config/seasons/synthetic.yaml` is now MOEX: venue moex-tbank, SBER-RUB-TQBR and GAZP-RUB-TQBR (lot 10) and
+TMOS-RUB-TQTF (lot 1, 0% commission), 1,000,000 RUB, prices of 2026-11-05, fees from `fees.venues.moex-tbank`
+(no `market.fee_bps`). The crypto season is `config/seasons/synthetic-crypto.yaml` (optional). `make reproduce`
+and `make report` were rerun with `ARENA_LEDGER__OFFLINE_INBOX=false` (no demo trials in the S6 inbox): 234
+runs; buy-and-hold leads at net Sharpe 7.87 [-2.86, 19.69]; martingale gross -17.81 vs net -31.01. The protocol
+experiments (E1, E1b, E2) do not depend on the world and are unchanged. 88 tests pass.

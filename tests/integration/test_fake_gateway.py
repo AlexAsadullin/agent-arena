@@ -119,7 +119,9 @@ async def test_orders_budgets_and_freeze(harness: Harness) -> None:
         assert isinstance(filled, OrderResult)
         assert filled.order.status == "filled"
         assert filled.order.price == pytest.approx(price)
-        assert filled.order.fee is None
+        assert filled.order.filled_qty == pytest.approx(4000 / price)
+        assert filled.order.avg_price == pytest.approx(price)
+        assert filled.order.fee == pytest.approx(4000 * s.market.fee_bps / 10_000)
         over = await tools.place_order(s.venue, sym, "buy", "market", 3000 / price, "sid", "why")
         assert isinstance(over, Refusal)
         assert over.reason == "capital"

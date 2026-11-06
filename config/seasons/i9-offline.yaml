@@ -37,7 +37,6 @@ budgets:
 market:
   seed: 7
   trades_per_bar: 1
-  fee_bps: 5.0
   initial_prices: {SBER-RUB-TQBR: 285.0, GAZP-RUB-TQBR: 130.0}
   regimes:
     - {name: flat, drift: 0.0, vol: 0.001, phi: 0.0}

@@ -30,6 +30,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolResult, TextContent
 from scipy.stats import norm
 
+from agent_arena.fees import FeeBook, Liquidity
 from agent_arena.gateway.client import AdminClient, GatewayBackend, GatewayFactory, GatewayTools, McpToolCaller
 from agent_arena.gateway.market import SyntheticMarket
 from agent_arena.gateway.models import ClockInfo, ClockRequest, CreateSessionRequest, SessionBudgets, SessionInfo
@@ -122,11 +123,13 @@ class FakeGateway:
         market: SyntheticMarket,
         pricing: Mapping[str, ModelPrice],
         settings: GatewaySettings,
+        fees: FeeBook | None = None,
     ) -> None:
         self.season = season
         self.market = market
         self.pricing = dict(pricing)
         self.settings = settings
+        self.fees = fees
         self.admin_key = settings.admin_key.get_secret_value() if settings.admin_key else None
         self.sessions: dict[str, FakeSession] = {}
         self.audit: list[AuditEntry] = []
@@ -205,9 +208,19 @@ class FakeGateway:
         if limit is not None and drawdown > limit:
             self._freeze(session, "drawdown", {"drawdown": drawdown})
 
-    def _fill(self, session: FakeSession, symbol: str, side: str, qty: float, price: float) -> float:
+    def fee(self, symbol: str, qty: float, price: float, liquidity: Liquidity) -> float:
+        """Fee of one fill: the venue's schedule (as I9's mirror sandbox charges), else ``market.fee_bps``."""
+        if self.fees is not None and self.fees.has_schedule(self.season.venue):
+            return float(self.fees.fee(self.season.venue, symbol, qty, price, liquidity, 0.0))
+        if self.season.market.fee_bps is None:
+            raise ValueError(f"venue {self.season.venue!r} has no fee schedule and the season sets no market.fee_bps")
+        return abs(qty * price) * self.season.market.fee_bps / BPS
+
+    def _fill(
+        self, session: FakeSession, symbol: str, side: str, qty: float, price: float, liquidity: Liquidity
+    ) -> float:
         signed = qty if side == "buy" else -qty
-        fee = abs(qty * price) * self.season.market.fee_bps / BPS
+        fee = self.fee(symbol, qty, price, liquidity)
         session.positions[symbol] = session.positions.get(symbol, 0.0) + signed
         session.cash -= signed * price + fee
         return fee
@@ -216,7 +229,7 @@ class FakeGateway:
         for order_id, order in list(session.resting.items()):
             price = self.mark(order.symbol, session)
             if (price <= order.price) if order.side == "buy" else (price >= order.price):
-                self._fill(session, order.symbol, order.side, order.qty, order.price)
+                self._fill(session, order.symbol, order.side, order.qty, order.price, "maker")
                 del session.resting[order_id]
 
     def _audit(self, session: FakeSession, tool: str, decision: str, detail: dict[str, Any]) -> None:
@@ -474,10 +487,10 @@ class FakeGateway:
                 session.resting[order_id] = RestingOrder(order_id, symbol, side, qty, price)
                 self._audit(session, "place_order", "rest", {"symbol": symbol})
                 return ok({"order": {**order, "status": "accepted"}, "reference_price": mark, "notional": notional})
-            self._fill(session, symbol, side, qty, mark)
+            fee = self._fill(session, symbol, side, qty, mark, "taker")
             self._audit(session, "place_order", "fill", {"symbol": symbol, "side": side, "qty": qty})
-            # Like I9 over I6: the order carries its fill price in ``price``; fees are not reported.
-            filled = {**order, "status": "filled", "price": mark}
+            # Like I9's mirror sandbox: the order reports its fill (quantity, average price and fee).
+            filled = {**order, "status": "filled", "price": mark, "filled_qty": qty, "avg_price": mark, "fee": fee}
             return ok({"order": filled, "reference_price": mark, "notional": notional, "routed_to": "i6"})
 
         @server.tool(description="Cancel a resting order.")
@@ -606,6 +619,7 @@ def fake_gateway_factory(
     pricing: Mapping[str, ModelPrice],
     gateway_settings: GatewaySettings,
     registry: dict[int, FakeGateway] | None = None,
+    fees: FeeBook | None = None,
 ) -> GatewayFactory:
     """One fake gateway per episode, each serving that episode's synthetic market.
 
@@ -614,7 +628,7 @@ def fake_gateway_factory(
 
     @asynccontextmanager
     async def factory(episode: int) -> AsyncIterator[GatewayBackend]:
-        fake = FakeGateway(season, SyntheticMarket(season, episode), pricing, gateway_settings)
+        fake = FakeGateway(season, SyntheticMarket(season, episode), pricing, gateway_settings, fees)
         if registry is not None:
             registry[episode] = fake
         transport = httpx.ASGITransport(app=fake.app)

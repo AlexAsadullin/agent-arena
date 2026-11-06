@@ -31,6 +31,7 @@ import typer
 from numpy.typing import NDArray
 from scipy.stats import kendalltau
 
+from agent_arena.fees import FeeBook
 from agent_arena.gateway.fake import fake_gateway_factory
 from agent_arena.logging_setup import configure_logging
 from agent_arena.pipeline import run_season_pipeline
@@ -477,7 +478,7 @@ async def _ensure_runs(season: SeasonConfig, settings: ArenaSettings) -> list[Ru
     if store.runs_path.exists():
         return store.load_runs()
     async with httpx.AsyncClient() as http:
-        factory = fake_gateway_factory(season, settings.pricing, settings.gateway)
+        factory = fake_gateway_factory(season, settings.pricing, settings.gateway, fees=FeeBook.from_settings(settings))
         return (await run_season_pipeline(season, settings, factory, http)).runs
 
 

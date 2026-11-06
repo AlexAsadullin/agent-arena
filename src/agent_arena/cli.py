@@ -10,6 +10,7 @@ from typing import Annotated
 import httpx
 import typer
 
+from agent_arena.fees import FeeBook
 from agent_arena.gateway.client import GatewayFactory, http_gateway_factory
 from agent_arena.gateway.fake import fake_gateway_factory
 from agent_arena.logging_setup import configure_logging
@@ -38,7 +39,7 @@ def _settings() -> ArenaSettings:
 
 def _gateway(choice: GatewayChoice, season: SeasonConfig, settings: ArenaSettings, url: str | None) -> GatewayFactory:
     if choice is GatewayChoice.fake:
-        return fake_gateway_factory(season, settings.pricing, settings.gateway)
+        return fake_gateway_factory(season, settings.pricing, settings.gateway, fees=FeeBook.from_settings(settings))
     return http_gateway_factory(settings.gateway if url is None else settings.gateway.at(url))
 
 

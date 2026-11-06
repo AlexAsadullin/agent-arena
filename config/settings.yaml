@@ -72,13 +72,35 @@ pricing:
   scripted/martingale-gambler: {input: 4.00, output: 20.00}
 
 accounting:
-  # Fallback fee when the gateway fill does not report one.
+  # Fee when the gateway fill does not report one and the venue has no schedule under `fees`.
   fallback_fee_bps: 5.0
   # Fill price when the gateway reports no explicit fill price: "order" uses the order's price (contract 6.4),
   # "reference" the gateway's I2 reference price at the session clock.
   fill_price_source: order
   # Orders below this notional (in account currency) are not sent.
   min_order_notional: 1.0
+
+fees:
+  # Trading fee schedules per venue, shared by the arena's accounting (when a fill reports no fee) and its
+  # fake gateway, so the fake charges what I9's mirror sandbox charges.
+  venues:
+    # MOEX: T-Invest basic tariff per user, 2026-11-05. 0.25% of trade value per fill, maker and taker
+    # alike; 0% for T-Bank's own funds (ETFs managed by T-Capital). Trading is local simulation only.
+    moex-tbank: &tinvest_basic
+      source: T-Invest basic tariff per user, 2026-11-05
+      maker_fee: 0.0025
+      taker_fee: 0.0025
+      rounding: 0.01              # each fill's fee is rounded half-up to the kopeck, as I9's mirror does
+      zero_fee_funds:
+        maker_fee: 0.0
+        taker_fee: 0.0
+        # Fallback list (same as I9's, from memory, not checked against T-Bank); I1's reference file
+        # (below) is authoritative and is merged in when it exists.
+        tickers: [TMOS, TRUR, TGLD, TBRU, TMON, TPAY, TDIV, TITR, TOFZ, TLCB]
+        instrument_uids: []
+        reference_file: market-tape-recorder/reference/tbank_zero_fee_funds.json
+    moex-algopack: *tinvest_basic
+    moex-iss: *tinvest_basic
 
 latency:
   # Slippage charged on traded notional for the time the agent spent thinking while the market moved.

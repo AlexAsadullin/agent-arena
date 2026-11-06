@@ -34,7 +34,8 @@ class MarketConfig(BaseModel):
     initial_prices: dict[str, float]
     trades_per_bar: int = Field(ge=1)
     regimes: list[RegimeConfig] = Field(min_length=1)
-    fee_bps: float = Field(ge=0)
+    # Fee for venues without a schedule under `fees` in settings (a schedule, such as MOEX's, wins).
+    fee_bps: float | None = Field(default=None, ge=0)
 
 
 class BudgetConfig(BaseModel):

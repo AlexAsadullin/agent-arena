@@ -13,12 +13,13 @@ from typer.testing import CliRunner
 from agent_arena.agents.factory import AgentFactory
 from agent_arena.agents.llm import load_prompts
 from agent_arena.cli import app
+from agent_arena.fees import FeeBook
 from agent_arena.gateway.fake import FakeGateway, fake_gateway_factory
 from agent_arena.leaderboard import build_leaderboard
 from agent_arena.pipeline import rebuild_leaderboard, run_season_pipeline
 from agent_arena.results import RunResult
 from agent_arena.runner import ArenaRunner
-from agent_arena.season import SeasonConfig
+from agent_arena.season import SeasonConfig, load_season
 from agent_arena.settings import ArenaSettings
 
 FIXTURE = Path("tests/fixtures/tiny_season.yaml")
@@ -30,7 +31,9 @@ async def run(
     http: httpx.AsyncClient,
     registry: dict[int, FakeGateway] | None = None,
 ) -> list[RunResult]:
-    factory = fake_gateway_factory(season, settings.pricing, settings.gateway, registry)
+    factory = fake_gateway_factory(
+        season, settings.pricing, settings.gateway, registry, FeeBook.from_settings(settings)
+    )
     runner = ArenaRunner(season, settings, factory, AgentFactory(settings, load_prompts(settings.prompts_file), http))
     return await runner.run_season()
 
@@ -160,3 +163,23 @@ def test_cli_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert rep.exit_code == 0, rep.output
     assert "leaderboard.html" in rep.output
     assert (tmp_path / "data" / "agent-arena" / "seasons" / "tiny" / "leaderboard.md").exists()
+
+
+async def test_moex_season_on_the_fake_charges_the_tinvest_tariff_once(
+    settings: ArenaSettings, http: httpx.AsyncClient
+) -> None:
+    """The fake charges 0.25% like I9's mirror sandbox and reports it; the arena books that fee once."""
+    season = load_season(Path(__file__).resolve().parents[2] / "config" / "seasons" / "i9-offline.yaml").model_copy(
+        update={"episodes": 1}
+    )
+    registry: dict[int, FakeGateway] = {}
+    runs = await run(season, settings, http, registry)
+    traded = sum(s.traded_notional for r in runs for s in r.steps)
+    fees = sum(s.fees for r in runs for s in r.steps)
+    assert traded > 0
+    # 0.25% per fill, each rounded to the kopeck (at most half a kopeck off per fill).
+    assert abs(fees - 0.0025 * traded) <= 0.005 * sum(s.n_orders for r in runs for s in r.steps)
+    assert fees == pytest.approx(0.0025 * traded, rel=1e-3)
+    # Every fill the fake made is one booked order; a second charge would make fees exceed 0.25% of notional.
+    fills = sum(1 for a in registry[0].audit if a.decision == "fill")
+    assert fills == sum(s.n_orders - s.n_rejected for r in runs for s in r.steps)

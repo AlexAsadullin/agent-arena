@@ -14,10 +14,10 @@ and abstained when the evidence was too weak. Specification: `../quant_platform_
 cd agent-arena
 cp .env.example .env          # set TRADEQ_DATA_DIR to the absolute path of Tradeq/data
 make setup                    # uv venv --python 3.13 .venv && uv sync --frozen
-make lint typecheck test      # offline, about 30 s
+make lint typecheck test      # offline, 25 to 55 s depending on load
 make reproduce                # synthetic season against the in-process fake gateway, about 1 min
 make report                   # experiments behind docs/report.md, about 10 s
-make integration              # opt-in: a small season through the real I9 gateway, about 15 s
+make integration              # opt-in: a small MOEX season through the real I9 gateway, about 5 s
 ```
 
 `make reproduce` runs 3 scripted LLM doubles and 4 baselines over 6 episodes x 3 seeds x 3 prompt variants
@@ -40,10 +40,12 @@ unset). The season is `config/seasons/i9-offline.yaml`: 2 agents, 2 episodes, 1 
 
 Against an I9 started with `make -C ../risk-gated-mcp-gateway serve-offline`, run
 `ARENA_GATEWAY__ADMIN_KEY=<key> arena run-season --season config/seasons/i9-offline.yaml --gateway-url
-http://127.0.0.1:8608`. The test also checks that every fill price equals I9's reference price at the session
-clock, and that the only rejects are exposure and order-notional limit hits. Last run: 4 runs, 226 orders
-filled, 0 of 226 fills off the reference price, ts-momentum net Sharpe -586 [-611, -561] against the trend
-chaser at -984 [-1009, -959] with 199.4 bps of intelligence cost per run (one-minute bars, annualised over
+http://127.0.0.1:8608`. The season trades SBER and GAZP on `moex-tbank` in whole lots; I9 routes paper orders
+to its mirror sandbox, which matches them against I2's order book. The test checks that every fill is routed
+to `mirror` within 5 ticks of I9's reference price, that each fill's fee equals the arena's fee schedule,
+that the arena books I9's fees once, and that the only rejects are exposure and order-notional limit hits.
+Last run (2026-11-05): 4 runs, 209 orders filled, ts-momentum net Sharpe -959 [-1221, -697] against the
+trend chaser at -1193 [-1273, -1113] with 168.8 bps of intelligence cost (one-minute bars annualised over
 525,600 periods; a smoke test, not evidence).
 
 ## Configuration
@@ -60,6 +62,15 @@ budgets, agents) are YAML files in `config/seasons/`; prompt templates are in `c
 | `ARENA_PROVIDERS__ANTHROPIC__API_KEY`, `ARENA_PROVIDERS__OPENAI_COMPAT__API_KEY` | keys for real LLM agents |
 | `ARENA_LEDGER__BASE_URL`, `ARENA_LEAKAGE__BASE_URL` | S6 and S7 services |
 | `ARENA_ACCOUNTING__FILL_PRICE_SOURCE` | `order` (default: the order's fill price) or `reference` (I9's I2 reference price at the session clock) |
+
+Fees: `fees.venues.<venue>` in `config/settings.yaml` holds the fee schedule per venue. The MOEX venues use the
+T-Invest basic tariff per user, 2026-11-05: 0.25% of trade value per fill, maker and taker alike, rounded
+half-up to the kopeck, and 0% for T-Bank's own funds (T-Capital ETFs; config tickers merged with I1's
+`$TRADEQ_DATA_DIR/market-tape-recorder/reference/tbank_zero_fee_funds.json` when it exists, otherwise a
+warning). This is the same model as I9's mirror sandbox. The arena books the fee that the gateway reports
+for an order (I9 and the fake both report it) and charges nothing more; only when a gateway reports no fee
+does it apply the schedule, or `accounting.fallback_fee_bps` on a venue without one. The fake gateway charges
+the schedule too, or the season's `market.fee_bps` on a venue without one (the synthetic crypto season).
 
 Model ids are set per agent in the season file; prices (USD per million tokens) are in `pricing`, and a model
 without a price cannot enter a season. Latency slippage is `latency.slippage_bps_per_second` (default 2).
@@ -103,12 +114,14 @@ Produced: leaderboard artefacts under `$TRADEQ_DATA_DIR/agent-arena/seasons/<sea
 probability matrices. `steps.parquet` has one row per run and step (`ts_decision` in int64 ns).
 
 Contract notes: no contract field was added. The arena reads optional order fill details (`filled_qty`,
-`avg_price`, `fee`) when the gateway reports them; otherwise it fills market orders at `reference_price` with
-the configured fallback fee.
+`avg_price`, `fee`) when the gateway reports them; otherwise it fills market orders at the order price (or
+`reference_price`) with the schedule fee.
 
 ## Key results
 
-Synthetic data only (see `docs/report.md`, which `make report` regenerates); 95% intervals in brackets.
+Synthetic data only (see `docs/report.md`, which `make report` regenerates); 95% intervals in brackets. Rerun
+on 2026-11-06 on the MOEX demo world (SBER, GAZP, TMOS in roubles, whole lots, 0.25% commission, 0% for TMOS).
+The E1/E1b/E2 rows are simulations of the protocol and did not change; the demo-season rows did.
 
 | Result | Value |
 |---|---|
@@ -116,13 +129,17 @@ Synthetic data only (see `docs/report.md`, which `make report` regenerates); 95%
 | Wrong winner, arena protocol, same seasons | 0.0% [0.0, 1.3]; correct 71.3% [66.0, 76.2], abstains otherwise |
 | False passes without skill: PSR >= 0.95 vs DSR >= 0.95 | 8.2% [7.4, 9.0] vs 0.0% [0.0, 0.1] |
 | Correct calls: 6 x 3 x 3 vs 12 x 3 x 3 design (episodes x seeds x variants) | 72.7% [67.4, 77.4] vs 92.7% [89.1, 95.1] |
-| Martingale double, gross vs net Sharpe in the demo season | -3.83 [-12.53, 5.22] vs -25.27 [-33.80, -16.51] |
+| Martingale double, gross vs net Sharpe in the demo season | -17.81 [-24.22, -11.47] vs -31.01 [-36.18, -25.90] |
+| Demo-season leader (net Sharpe) | buy-and-hold 7.87 [-2.86, 19.69]; no agent beats it significantly |
 
 ## Limitations and roadmap
 
-All evidence is synthetic; no real LLM and no real market data have been run yet. The latency slippage rate
-is an assumption until it is calibrated on I6 fills. The real I9 has run a small season (`make integration`)
-with its offline fakes only, not with real I2 or I6 services. I9 prices the scripted test doubles with its
+All evidence is synthetic; no real LLM and no real market data have been run yet. The demo season
+(`config/seasons/synthetic.yaml`) is a MOEX world with continuous hourly bars (no session gaps or auctions);
+the v0.1 crypto season is kept as `config/seasons/synthetic-crypto.yaml`. With a 0.25% commission, every
+frequently rebalancing agent loses, so the demo ranking mostly measures turnover. The latency slippage rate is an assumption until it is calibrated on fills. The real I9 has run a small
+MOEX season (`make integration`) through its mirror sandbox with I9's offline fakes of I2 and the other
+services, not with recorded MOEX books. I9 prices the scripted test doubles with its
 default row, so its token budget for them differs from the arena's cost table; the Claude rates agree.
 
 Roadmap: a calibrated latency model from I6 fills; a season with real models through the Anthropic and

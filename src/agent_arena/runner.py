@@ -25,9 +25,10 @@ from decimal import Decimal
 
 import structlog
 
-from agent_arena.accounting import BPS, Ledger, dec, latency_cost, token_cost
+from agent_arena.accounting import Ledger, dec, latency_cost, token_cost
 from agent_arena.agents.base import Agent, Decision, Observation
 from agent_arena.agents.factory import AgentFactory
+from agent_arena.fees import FeeBook
 from agent_arena.gateway.client import GatewayBackend, GatewayError, GatewayFactory, GatewayTools
 from agent_arena.gateway.models import Refusal, SessionBudgets, TradeRow
 from agent_arena.results import RunResult, StepRecord
@@ -116,6 +117,7 @@ class ArenaRunner:
         self.settings = settings
         self.gateway_factory = gateway_factory
         self.agents = agents
+        self.fees = FeeBook.from_settings(settings)
         self._bar_ns = season.bar_seconds * 1_000_000_000
 
     def plan(self) -> list[RunSpec]:
@@ -378,9 +380,12 @@ class ArenaRunner:
                 continue
             qty = placed.filled_qty if placed.filled_qty is not None else abs(delta)
             fill_price = self._fill_price(placed.avg_price, placed.price, order.reference_price, price)
-            fee_reported = placed.fee
+            # A fee the gateway reports (I9's mirror sandbox, the fake) is booked as is, never charged twice;
+            # otherwise the venue's schedule (or the fallback rate) is applied to the market order as taker.
             fee = (
-                fee_reported if fee_reported is not None else qty * fill_price * settings.fallback_fee_bps / float(BPS)
+                placed.fee
+                if placed.fee is not None
+                else float(self.fees.fee(season.venue, symbol, qty, fill_price, "taker", settings.fallback_fee_bps))
             )
             ledger.apply_fill(symbol, qty if side == "buy" else -qty, fill_price, fee)
             result.traded_notional += dec(qty) * dec(fill_price)

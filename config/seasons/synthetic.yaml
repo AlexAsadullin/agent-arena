@@ -1,9 +1,12 @@
 # Offline demo season: three scripted "LLM" agents with different behaviour plus four quant baselines,
 # across 4 synthetic regimes x 3 seeds x 3 prompt variants, against the in-process fake gateway.
+# MOEX world: two TQBR shares and one T-Capital fund (0% commission) in roubles, whole lots, T-Invest fees
+# from settings `fees.venues.moex-tbank`. Bars are continuous (no session gaps). The crypto variant is
+# config/seasons/synthetic-crypto.yaml.
 season_id: synthetic-s1
 description: Synthetic season with known-behaviour scripted agents (not market evidence).
-venue: SYNTH
-symbols: [BTC-USDT-PERP, ETH-USDT-PERP]
+venue: moex-tbank
+symbols: [SBER-RUB-TQBR, GAZP-RUB-TQBR, TMOS-RUB-TQTF]
 channel: trades
 bar_seconds: 3600
 start: "2025-01-06T00:00:00Z"
@@ -13,17 +16,18 @@ episode_gap_bars: 0
 episodes: 6
 seeds: [0, 1, 2]
 prompt_variants: [neutral, risk_averse, aggressive]
-capital: 10000
+capital: 1000000
 max_weight: 1.0
-periods_per_year: 8760
+lot_sizes: {SBER-RUB-TQBR: 10, GAZP-RUB-TQBR: 10, TMOS-RUB-TQTF: 1}
+periods_per_year: 4200   # about 252 days x 16.7 trading hours (morning, main and evening sessions)
 features: [ret_24, vol_24, z_24]
 forecast_model: null
 forecast_horizon: 1
 
 budgets:
-  capital: 15000
+  capital: 1500000
   max_drawdown: 0.25
-  max_order_notional: 12000
+  max_order_notional: 1200000
   max_orders_per_window: 4
   order_window_s: 3600
   max_token_cost_usd: 5.0
@@ -32,8 +36,7 @@ budgets:
 market:
   seed: 7
   trades_per_bar: 2
-  fee_bps: 5.0
-  initial_prices: {BTC-USDT-PERP: 60000.0, ETH-USDT-PERP: 3000.0}
+  initial_prices: {SBER-RUB-TQBR: 292.7, GAZP-RUB-TQBR: 112.5, TMOS-RUB-TQTF: 6.5}   # 2026-11-05
   regimes:
     - {name: trend_up, drift: 0.0005, vol: 0.006, phi: 0.05}
     - {name: mean_revert, drift: 0.0, vol: 0.006, phi: -0.35}
